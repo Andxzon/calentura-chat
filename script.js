@@ -27,6 +27,8 @@ const PROVIDERS = {
             { id: 'o1-mini',      label: 'o1 Mini',       price: { in: 3.00, out: 12.00 } },
             { id: 'gpt-4.1',      label: 'GPT-4.1',       price: { in: 2.00, out: 8.00  } },
             { id: 'o1',           label: 'o1',            price: { in: 15.00, out: 60.00 } },
+            { id: 'dall-e-3',     label: 'DALL-E 3 (Estándar)', price: { perImage: 0.040 } },
+            { id: 'dall-e-2',     label: 'DALL-E 2',            price: { perImage: 0.020 } },
         ]
     },
     anthropic: {
@@ -89,6 +91,13 @@ let cfg = loadConfig();
 let generating      = false;
 let abortController = null;
 let thinkingMode    = false;
+let magicPrompt     = false;
+
+const IMAGE_ENHANCER_PROMPT = `Act as an expert prompt engineer and digital artist. 
+The user will provide a short idea for an image. Your job is to rewrite it into a highly detailed, descriptive, and perfect English prompt for an image generation model.
+Include specific details about: Subject, medium, lighting, color palette, camera angle, and atmosphere.
+CRITICAL: Respect the original style requested by the user. Do not force a specific style (like photorealistic or cinematic) unless explicitly requested. Ensure the stylistic enhancements remain neutral but high quality.
+DO NOT output any conversational text. ONLY output the final English prompt.`;
 
 // Archivos adjuntos pendientes de enviar
 // Cada elemento: { name, fileType, content, mediaType?, dataUrl? }
@@ -403,8 +412,13 @@ function updateModelPriceUI(provider, modelId) {
     } else {
         const model = PROVIDERS[provider]?.models.find(m => m.id === modelId);
         if (model && model.price) {
-            badge.innerHTML = `<i data-lucide="coins"></i> $${model.price.in} / $${model.price.out}`;
-            badge.title = `Precio por 1M de tokens: Entrada $${model.price.in} / Salida $${model.price.out}`;
+            if (model.price.perImage) {
+                badge.innerHTML = `<i data-lucide="image"></i> $${model.price.perImage.toFixed(3)}`;
+                badge.title = `Precio por imagen generada: $${model.price.perImage}`;
+            } else {
+                badge.innerHTML = `<i data-lucide="coins"></i> $${model.price.in} / $${model.price.out}`;
+                badge.title = `Precio por 1M de tokens: Entrada $${model.price.in} / Salida $${model.price.out}`;
+            }
         } else {
             badge.innerHTML = `<i data-lucide="coins"></i> ?`;
         }
@@ -771,10 +785,36 @@ async function processFile(file, maxChars) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
-                const dataUrl = e.target.result;
-                // dataUrl = "data:image/png;base64,AAAA..."
-                const base64 = dataUrl.split(',')[1];
-                resolve({ name, fileType: 'image', content: base64, mediaType: mime, dataUrl });
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 800; // Redimensionar a máx 800px para ahorrar espacio en localStorage
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_SIZE || height > MAX_SIZE) {
+                        if (width > height) {
+                            height = Math.round(height * (MAX_SIZE / width));
+                            width = MAX_SIZE;
+                        } else {
+                            width = Math.round(width * (MAX_SIZE / height));
+                            height = MAX_SIZE;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convertir a JPEG con calidad 0.75 para reducir muchísimo el tamaño en base64
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                    const base64 = compressedDataUrl.split(',')[1];
+                    
+                    resolve({ name, fileType: 'image', content: base64, mediaType: 'image/jpeg', dataUrl: compressedDataUrl });
+                };
+                img.onerror = () => reject(new Error('Error al decodificar la imagen.'));
+                img.src = e.target.result;
             };
             reader.onerror = () => reject(new Error('Error al leer la imagen.'));
             reader.readAsDataURL(file);
@@ -1059,7 +1099,10 @@ async function sendMessage() {
     abortController = new AbortController();
 
     try {
-        if (cfg.provider === 'openai' || cfg.provider === 'local') {
+        if (cfg.provider === 'openai' && cfg.openaiModel.startsWith('dall-e')) {
+            // Modelo de imagen (endpoint /images/generations)
+            ({ fullText, usageInput, usageOutput } = await generateImageOpenAI(asstRefs, text, cfg.openaiModel));
+        } else if (cfg.provider === 'openai' || cfg.provider === 'local') {
             ({ fullText, usageInput, usageOutput } = await streamOpenAI(asstRefs, fullText));
         } else if (cfg.provider === 'anthropic') {
             ({ fullText, usageInput, usageOutput } = await streamAnthropic(asstRefs, fullText));
@@ -1103,6 +1146,104 @@ async function sendMessage() {
         abortController = null;
         promptInput.focus();
     }
+}
+
+/* =========================================================
+   GENERACIÓN DE IMÁGENES — OpenAI (DALL-E)
+   ========================================================= */
+
+async function generateImageOpenAI(asstRefs, promptText, modelId) {
+    if (!promptText) {
+        throw new Error("Se requiere texto (prompt) para generar una imagen.");
+    }
+
+    if (asstRefs.thinkingDetails) {
+        asstRefs.thinkingDetails.style.display = 'none';
+    }
+
+    let finalPrompt = promptText;
+    let extraUsageIn = 0;
+    let extraUsageOut = 0;
+
+    if (magicPrompt) {
+        asstRefs.textEl.innerHTML = '<span class="muted"><i data-lucide="wand-2" class="spin"></i> Mejorando prompt mágicamente...</span>';
+        if (window.lucide) lucide.createIcons({ nodes: [asstRefs.textEl] });
+
+        try {
+            // Llamada al modelo de texto rápido para mejorar el prompt
+            // Usamos GPT-4o-mini por defecto para esto
+            const textModel = cfg.openaiModel.startsWith('gpt-') ? cfg.openaiModel : 'gpt-4o-mini';
+            const resOpt = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.openaiKey}`
+                },
+                signal: abortController.signal,
+                body: JSON.stringify({
+                    model: textModel,
+                    messages: [
+                        { role: 'system', content: IMAGE_ENHANCER_PROMPT },
+                        { role: 'user', content: promptText }
+                    ],
+                    max_tokens: 500,
+                    temperature: 0.7
+                })
+            });
+
+            if (resOpt.ok) {
+                const optData = await resOpt.json();
+                if (optData.choices && optData.choices[0]?.message?.content) {
+                    finalPrompt = optData.choices[0].message.content.trim();
+                    extraUsageIn = optData.usage?.prompt_tokens || 0;
+                    extraUsageOut = optData.usage?.completion_tokens || 0;
+                }
+            }
+        } catch (e) {
+            console.warn("Error al mejorar el prompt mágicamente. Usando prompt original.", e);
+        }
+    }
+
+    asstRefs.textEl.innerHTML = '<span class="muted"><i data-lucide="loader-2" class="spin"></i> Generando imagen...</span>';
+    if (window.lucide) lucide.createIcons({ nodes: [asstRefs.textEl] });
+
+    const body = {
+        model: modelId,
+        prompt: finalPrompt,
+        n: 1,
+        size: "1024x1024"
+    };
+
+    if (modelId === 'dall-e-3') {
+        body.quality = "standard";
+    }
+
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.openaiKey}`
+        },
+        signal: abortController.signal,
+        body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${detail.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const url = data.data[0].url;
+    const revisedPrompt = data.data[0].revised_prompt || promptText;
+
+    // Retornamos el markdown. Usaremos HTML inline para que la imagen se adapte mejor visualmente.
+    const fullText = `<img src="${url}" alt="${escHtml(revisedPrompt)}" style="max-width:100%; border-radius:10px; margin-top:8px; border:1px solid var(--border2);">\n\n_${escHtml(revisedPrompt)}_`;
+
+    updateAssistantView(asstRefs, fullText);
+
+    // Sumamos los tokens usados en el enhancer (si los hubo)
+    return { fullText, usageInput: extraUsageIn, usageOutput: extraUsageOut };
 }
 
 /* =========================================================
@@ -1460,6 +1601,16 @@ function toggleThinking() {
         btn.classList.toggle('thinking-active', thinkingMode);
         const span = btn.querySelector('span');
         if (span) span.textContent = `Razonamiento: ${thinkingMode ? 'ON' : 'OFF'}`;
+    }
+}
+
+function toggleMagicPrompt() {
+    magicPrompt = !magicPrompt;
+    const btn = $('magicPromptBtn');
+    if (btn) {
+        btn.classList.toggle('thinking-active', magicPrompt); // Reusing thinking-active class for visual feedback
+        const span = btn.querySelector('span');
+        if (span) span.textContent = `Magia: ${magicPrompt ? 'ON' : 'OFF'}`;
     }
 }
 
