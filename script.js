@@ -172,7 +172,28 @@ function loadChats() {
 }
 
 function persistChats() {
-    localStorage.setItem('nc_chats', JSON.stringify(chats));
+    try {
+        localStorage.setItem('nc_chats', JSON.stringify(chats));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.message.includes('quota')) {
+            let saved = false;
+            while (chats.length > 1 && !saved) {
+                chats.pop(); // Eliminar el chat más antiguo
+                try {
+                    localStorage.setItem('nc_chats', JSON.stringify(chats));
+                    saved = true;
+                    showNotice('Memoria llena. Se eliminaron chats muy antiguos automáticamente.', 'warning');
+                } catch (err) {
+                    // Si falla, en la siguiente iteración se borrará otro
+                }
+            }
+            if (!saved) {
+                showNotice('El chat es demasiado grande y no se pudo guardar. Limpia el contexto.', 'error');
+            }
+        } else {
+            console.error('[CalenturaChat 😋] Error guardando historial:', e);
+        }
+    }
 }
 
 function createNewChat() {

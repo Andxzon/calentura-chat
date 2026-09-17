@@ -1433,9 +1433,19 @@ textarea#prompt::placeholder { color: var(--muted); }
         z-index: 50;
     }
 
-    .header { padding: 0 12px; }
+    .header { 
+        padding: 8px 12px; 
+        height: auto; 
+        min-height: 60px; 
+        flex-wrap: wrap; 
+        gap: 8px; 
+    }
+    .header-left { flex-wrap: wrap; }
+    .model-selector { flex-wrap: wrap; gap: 4px; }
+    
     .status-text { display: none; }
     .status-indicator { padding: 5px 8px; }
+    .model-price-btn { margin-left: 0; }
 
     .chat { padding-left: 12px; padding-right: 12px; }
     .message { gap: 10px; }
