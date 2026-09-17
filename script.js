@@ -27,8 +27,11 @@ const PROVIDERS = {
             { id: 'o1-mini',      label: 'o1 Mini',       price: { in: 3.00, out: 12.00 } },
             { id: 'gpt-4.1',      label: 'GPT-4.1',       price: { in: 2.00, out: 8.00  } },
             { id: 'o1',           label: 'o1',            price: { in: 15.00, out: 60.00 } },
-            { id: 'dall-e-3',     label: 'DALL-E 3 (Estándar)', price: { perImage: 0.040 } },
-            { id: 'dall-e-2',     label: 'DALL-E 2',            price: { perImage: 0.020 } },
+            { id: 'gpt-image-2.5-sunburst', label: 'GPT-Image-2.5 (Sunburst)', price: { perImage: 0.040 } },
+            { id: 'gpt-image-2.5-flare',    label: 'GPT-Image-2.5 (Flare)',    price: { perImage: 0.035 } },
+            { id: 'gpt-image-latest',       label: 'GPT Image 2 (Latest)',     price: { perImage: 0.050 } },
+            { id: 'gpt-image-1.5',          label: 'GPT Image 1.5',            price: { perImage: 0.020 } },
+            { id: 'gpt-image-1-mini',       label: 'GPT Image 1 Mini',         price: { perImage: 0.010 } },
         ]
     },
     anthropic: {
@@ -404,13 +407,27 @@ function populateModelSelect(provider) {
 
 function updateModelPriceUI(provider, modelId) {
     const badge = $('modelPriceBadge');
+    
+    let isImageModel = false;
+    const model = PROVIDERS[provider]?.models.find(m => m.id === modelId);
+    if (model && model.price && model.price.perImage) {
+        isImageModel = true;
+    }
+    
+    const magicBtn = $('magicPromptBtn');
+    if (magicBtn) {
+        magicBtn.style.display = isImageModel ? '' : 'none';
+        if (!isImageModel && typeof magicPrompt !== 'undefined' && magicPrompt) {
+            if (typeof toggleMagicPrompt === 'function') toggleMagicPrompt();
+        }
+    }
+    
     if (!badge) return;
     
     if (provider === 'local') {
         badge.innerHTML = `<i data-lucide="coins"></i> Gratis`;
         badge.title = "Los modelos locales no tienen costo por token.";
     } else {
-        const model = PROVIDERS[provider]?.models.find(m => m.id === modelId);
         if (model && model.price) {
             if (model.price.perImage) {
                 badge.innerHTML = `<i data-lucide="image"></i> $${model.price.perImage.toFixed(3)}`;
@@ -1099,7 +1116,13 @@ async function sendMessage() {
     abortController = new AbortController();
 
     try {
-        if (cfg.provider === 'openai' && cfg.openaiModel.startsWith('dall-e')) {
+        let isImageModel = false;
+        const currentModelData = PROVIDERS[cfg.provider]?.models.find(m => m.id === getCurrentModelId());
+        if (currentModelData && currentModelData.price && currentModelData.price.perImage) {
+            isImageModel = true;
+        }
+
+        if (cfg.provider === 'openai' && isImageModel) {
             // Modelo de imagen (endpoint /images/generations)
             ({ fullText, usageInput, usageOutput } = await generateImageOpenAI(asstRefs, text, cfg.openaiModel));
         } else if (cfg.provider === 'openai' || cfg.provider === 'local') {
@@ -1234,11 +1257,12 @@ async function generateImageOpenAI(asstRefs, promptText, modelId) {
     }
 
     const data = await res.json();
-    const url = data.data[0].url;
-    const revisedPrompt = data.data[0].revised_prompt || promptText;
+    const item = data.data && data.data[0] ? data.data[0] : {};
+    const url = item.url || (item.b64_json ? 'data:image/png;base64,' + item.b64_json : '');
+    const revisedPrompt = item.revised_prompt || promptText;
 
     // Retornamos el markdown. Usaremos HTML inline para que la imagen se adapte mejor visualmente.
-    const fullText = `<img src="${url}" alt="${escHtml(revisedPrompt)}" style="max-width:100%; border-radius:10px; margin-top:8px; border:1px solid var(--border2);">\n\n_${escHtml(revisedPrompt)}_`;
+    const fullText = `<img src="${url}" alt="${escHtml(revisedPrompt)}" referrerpolicy="no-referrer" style="max-width: 400px; max-height: 400px; width: 100%; object-fit: contain; border-radius:10px; margin-top:8px; border:1px solid var(--border2);">\n\n_${escHtml(revisedPrompt)}_`;
 
     updateAssistantView(asstRefs, fullText);
 
