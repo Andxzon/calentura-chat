@@ -20,25 +20,23 @@ const PROVIDERS = {
     openai: {
         label: 'OpenAI',
         models: [
-            { id: 'gpt-4o-mini',  label: 'GPT-4o Mini', price: { in: 0.15, out: 0.60 } },
-            { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', price: { in: 0.30, out: 1.20 } },
-            { id: 'o3-mini',      label: 'o3 Mini', price: { in: 1.50, out: 6.00 } },
-            { id: 'gpt-4o',       label: 'GPT-4o', price: { in: 2.50, out: 10.00 } },
-            { id: 'o1-mini',      label: 'o1 Mini', price: { in: 3.00, out: 12.00 } },
-            { id: 'gpt-4.1',      label: 'GPT-4.1', price: { in: 5.00, out: 20.00 } },
-            { id: 'o1',           label: 'o1', price: { in: 15.00, out: 60.00 } },
+            { id: 'gpt-4o-mini',  label: 'GPT-4o Mini',  price: { in: 0.15, out: 0.60  } },
+            { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', price: { in: 0.40, out: 1.60  } },
+            { id: 'o3-mini',      label: 'o3 Mini',       price: { in: 1.10, out: 4.40  } },
+            { id: 'gpt-4o',       label: 'GPT-4o',        price: { in: 2.50, out: 10.00 } },
+            { id: 'o1-mini',      label: 'o1 Mini',       price: { in: 3.00, out: 12.00 } },
+            { id: 'gpt-4.1',      label: 'GPT-4.1',       price: { in: 2.00, out: 8.00  } },
+            { id: 'o1',           label: 'o1',            price: { in: 15.00, out: 60.00 } },
         ]
     },
     anthropic: {
         label: 'Anthropic',
         models: [
-            { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5', price: { in: 0.20, out: 1.00 } },
-            { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku (2024-10-22)', price: { in: 0.25, out: 1.25 } },
-            { id: 'claude-sonnet-5',            label: 'Claude Sonnet 5', price: { in: 2.50, out: 12.50 } },
-            { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet (2024-10-22)', price: { in: 3.00, out: 15.00 } },
-            { id: 'claude-opus-5',              label: 'Claude Opus 5', price: { in: 10.00, out: 50.00 } },
-            { id: 'claude-3-opus-20240229',     label: 'Claude 3 Opus (2024-02-29)', price: { in: 15.00, out: 75.00 } },
-            { id: 'claude-fable-5-1',           label: 'Claude Fable 5.1', price: { in: 20.00, out: 80.00 } },
+            // Precios actualizados sept-2026 (por 1M tokens)
+            { id: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5',  price: { in: 1.00, out: 5.00  } },
+            { id: 'claude-sonnet-5',   label: 'Claude Sonnet 5',   price: { in: 2.00, out: 10.00 } },
+            { id: 'claude-opus-5',     label: 'Claude Opus 5',     price: { in: 5.00, out: 25.00 } },
+            { id: 'claude-fable-5-1',  label: 'Claude Fable 5.1',  price: { in: 10.00, out: 50.00 } },
         ]
     },
     local: {
@@ -92,8 +90,24 @@ let generating      = false;
 let abortController = null;
 let thinkingMode    = false;
 
+// Archivos adjuntos pendientes de enviar
+// Cada elemento: { name, fileType, content, mediaType?, dataUrl? }
+//   fileType: 'image' | 'pdf' | 'text'
+//   content: string (texto extraído o base64 sin prefijo)
+//   mediaType: 'image/png' etc. (solo para imágenes)
+//   dataUrl: DataURL completo para previsualización en UI
+let pendingAttachments = [];
+
 // Sesión de tokens acumulados
 let sessionTokens = { input: 0, output: 0 };
+try {
+    const saved = JSON.parse(localStorage.getItem('nc_session_tokens'));
+    if (saved) sessionTokens = saved;
+} catch (e) {}
+
+function persistTokens() {
+    localStorage.setItem('nc_session_tokens', JSON.stringify(sessionTokens));
+}
 
 // Historial de chats (array de sesiones)
 // { id, title, provider, model, messages[], createdAt, updatedAt }
@@ -137,6 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Poblar selector de proveedor / modelo
     syncProviderSelect();
     populateModelSelect(cfg.provider);
+
+    // Cargar tokens
+    updateSessionUsageUI();
 
     // Abrir el último chat activo o crear uno nuevo
     if (chats.length > 0) {
@@ -705,6 +722,239 @@ async function fetchAnthropicCredits() {
 }
 
 /* =========================================================
+   ADJUNTAR ARCHIVOS
+   ========================================================= */
+
+/**
+ * Abre el selector de archivos del sistema operativo.
+ */
+function triggerFileInput() {
+    $('fileInput').value = ''; // Permite re-seleccionar el mismo archivo
+    $('fileInput').click();
+}
+
+/**
+ * Handler para el input file: procesa cada archivo seleccionado.
+ */
+async function onFilesSelected(event) {
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
+
+    const MAX_FILES = 5;
+    const MAX_TEXT_CHARS = 60000; // ~15k tokens de seguridad
+
+    for (const file of files) {
+        if (pendingAttachments.length >= MAX_FILES) {
+            showNotice(`Máximo ${MAX_FILES} archivos por mensaje.`, 'warning');
+            break;
+        }
+        try {
+            const attachment = await processFile(file, MAX_TEXT_CHARS);
+            pendingAttachments.push(attachment);
+        } catch (err) {
+            showNotice(`No se pudo leer "${file.name}": ${err.message}`, 'warning');
+        }
+    }
+
+    renderAttachmentPreview();
+}
+
+/**
+ * Procesa un archivo y devuelve un objeto de adjunto normalizado.
+ */
+async function processFile(file, maxChars) {
+    const name = file.name;
+    const mime = file.type;
+
+    // --- IMAGEN ---
+    if (mime.startsWith('image/')) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target.result;
+                // dataUrl = "data:image/png;base64,AAAA..."
+                const base64 = dataUrl.split(',')[1];
+                resolve({ name, fileType: 'image', content: base64, mediaType: mime, dataUrl });
+            };
+            reader.onerror = () => reject(new Error('Error al leer la imagen.'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // --- PDF ---
+    if (mime === 'application/pdf' || name.toLowerCase().endsWith('.pdf')) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const text = await extractPdfText(e.target.result, maxChars);
+                    resolve({ name, fileType: 'pdf', content: text });
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = () => reject(new Error('Error al leer el PDF.'));
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    // --- TEXTO PLANO ---
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            let text = e.target.result;
+            if (text.length > maxChars) {
+                text = text.slice(0, maxChars) + '\n\n[... contenido truncado para caber en el contexto ...]';
+            }
+            resolve({ name, fileType: 'text', content: text });
+        };
+        reader.onerror = () => reject(new Error('Error al leer el archivo.'));
+        reader.readAsText(file, 'utf-8');
+    });
+}
+
+/**
+ * Extrae texto de un ArrayBuffer de PDF usando PDF.js (importación dinámica).
+ */
+async function extractPdfText(arrayBuffer, maxChars) {
+    let getDocument, GlobalWorkerOptions;
+
+    try {
+        const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
+        getDocument         = pdfjs.getDocument;
+        GlobalWorkerOptions = pdfjs.GlobalWorkerOptions;
+    } catch {
+        throw new Error('No se pudo cargar PDF.js. Verifica tu conexión a internet.');
+    }
+
+    // Worker separado es obligatorio en navegadores
+    GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+
+    const pdf = await getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+        if (fullText.length >= maxChars) break;
+        const page    = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(item => item.str).join(' ');
+        fullText += `\n--- Página ${i} ---\n${pageText}`;
+    }
+
+    if (fullText.length > maxChars) {
+        fullText = fullText.slice(0, maxChars) + '\n\n[... PDF truncado para caber en el contexto ...]';
+    }
+
+    return fullText.trim() || '(El PDF no contiene texto extraíble — puede ser un PDF escaneado o de solo imágenes.)';
+}
+
+
+/**
+ * Elimina un adjunto por índice.
+ */
+function removeAttachment(index) {
+    pendingAttachments.splice(index, 1);
+    renderAttachmentPreview();
+}
+
+/**
+ * Renderiza los chips de adjuntos en #attachmentPreview.
+ */
+function renderAttachmentPreview() {
+    const container = $('attachmentPreview');
+    const btn       = $('attachBtn');
+    if (!container) return;
+
+    if (pendingAttachments.length === 0) {
+        container.style.display = 'none';
+        btn?.classList.remove('has-files');
+        return;
+    }
+
+    container.style.display = 'flex';
+    btn?.classList.add('has-files');
+
+    container.innerHTML = pendingAttachments.map((att, i) => {
+        const icon = att.fileType === 'image'
+            ? `<img class="chip-thumb" src="${escHtml(att.dataUrl)}" alt="">`
+            : `<span class="chip-icon"><i data-lucide="${att.fileType === 'pdf' ? 'file-text' : 'file-code'}"></i></span>`;
+
+        const typeLabel = att.fileType === 'image' ? att.mediaType?.split('/')[1]?.toUpperCase() || 'IMG'
+                        : att.fileType === 'pdf'   ? 'PDF'
+                        : 'TXT';
+
+        return `
+            <div class="attachment-chip">
+                ${icon}
+                <span class="chip-name" title="${escHtml(att.name)}">${escHtml(att.name)}</span>
+                <span class="chip-type">${typeLabel}</span>
+                <button class="chip-remove" onclick="removeAttachment(${i})" title="Quitar">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>`;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons({ nodes: [container] });
+}
+
+/**
+ * Construye el campo `content` del mensaje del usuario para la API.
+ * Devuelve un string si no hay adjuntos, o un array de content blocks si los hay.
+ *
+ * @param {string}  textRaw   - Texto escrito por el usuario
+ * @param {string}  provider  - 'openai' | 'anthropic' | 'local'
+ * @param {Array}   attachments - copia de pendingAttachments al momento de enviar
+ */
+function buildUserContent(textRaw, provider, attachments) {
+    if (!attachments.length) return textRaw;
+
+    // Separar imágenes y documentos de texto
+    const images = attachments.filter(a => a.fileType === 'image');
+    const docs   = attachments.filter(a => a.fileType !== 'image');
+
+    // Prefijo con el contenido de los documentos adjuntos
+    let textWithDocs = textRaw;
+    if (docs.length) {
+        const docBlocks = docs.map(d =>
+            `\n\n---\n**Archivo adjunto: ${d.name}**\n\`\`\`\n${d.content}\n\`\`\``
+        ).join('');
+        textWithDocs = textRaw + docBlocks;
+    }
+
+    if (!images.length) {
+        // Solo texto/documentos — devolver string (compatible con todos los modelos)
+        return textWithDocs;
+    }
+
+    // Hay imágenes: construir array de content blocks según proveedor
+    if (provider === 'anthropic') {
+        const blocks = [
+            { type: 'text', text: textWithDocs || '(Revisa la imagen adjunta)' },
+            ...images.map(img => ({
+                type: 'image',
+                source: {
+                    type:       'base64',
+                    media_type: img.mediaType,
+                    data:       img.content
+                }
+            }))
+        ];
+        return blocks;
+    }
+
+    // OpenAI / Local (vision format)
+    const blocks = [
+        { type: 'text', text: textWithDocs || '(Revisa la imagen adjunta)' },
+        ...images.map(img => ({
+            type:      'image_url',
+            image_url: { url: img.dataUrl, detail: 'auto' }
+        }))
+    ];
+    return blocks;
+}
+
+/* =========================================================
    ENVIAR / DETENER
    ========================================================= */
 
@@ -732,7 +982,9 @@ function setSendState(isGenerating) {
 async function sendMessage() {
     if (generating) return;
     const text = promptInput.value.trim();
-    if (!text) return;
+
+    // Debe haber texto O archivos adjuntos
+    if (!text && pendingAttachments.length === 0) return;
 
     // Validar key si no es local
     if (cfg.provider === 'openai' && !cfg.openaiKey) {
@@ -746,26 +998,55 @@ async function sendMessage() {
         return;
     }
 
+    // Snapshot de adjuntos antes de limpiar
+    const attachmentsSnapshot = [...pendingAttachments];
+
     setSendState(true);
     promptInput.value = '';
     resizeTextarea();
 
-    // Mostrar mensaje del usuario
+    // Limpiar adjuntos de la UI
+    pendingAttachments = [];
+    renderAttachmentPreview();
+
+    // Mostrar mensaje del usuario en la UI
     $('welcome')?.remove();
     const userRefs = addMessageDOM('user');
-    userRefs.textEl.textContent = text;
+    userRefs.textEl.textContent = text || '';
 
-    // Agregar al historial interno
-    const userContent = cfg.provider === 'local'
+    // Mostrar previews de imágenes en la burbuja del usuario
+    const userImages = attachmentsSnapshot.filter(a => a.fileType === 'image');
+    userImages.forEach(img => {
+        const el = document.createElement('img');
+        el.src = img.dataUrl;
+        el.className = 'user-attached-image';
+        el.alt = img.name;
+        userRefs.textEl.appendChild(el);
+    });
+    const userDocs = attachmentsSnapshot.filter(a => a.fileType !== 'image');
+    if (userDocs.length) {
+        const docInfo = document.createElement('div');
+        docInfo.style.cssText = 'margin-top:6px;font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px;';
+        userDocs.forEach(d => {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'background:var(--panel3);border:1px solid var(--border);border-radius:6px;padding:2px 8px;';
+            badge.textContent = `📎 ${d.name}`;
+            docInfo.appendChild(badge);
+        });
+        userRefs.textEl.appendChild(docInfo);
+    }
+
+    // Construir el content del mensaje según proveedor y adjuntos
+    const baseText = cfg.provider === 'local'
         ? (thinkingMode ? `/think\n${text}` : `/no_think\n${text}`)
         : text;
 
+    const userContent = buildUserContent(baseText, cfg.provider, attachmentsSnapshot);
     activeMessages.push({ role: 'user', content: userContent });
 
     // Actualizar título si es el primer mensaje
     const isFirst = activeMessages.filter(m => m.role === 'user').length === 1;
     updateActiveChat(activeMessages, isFirst);
-
     updateContextCount();
 
     // Crear burbuja del asistente
@@ -792,6 +1073,7 @@ async function sendMessage() {
         // Actualizar tokens
         sessionTokens.input  += usageInput;
         sessionTokens.output += usageOutput;
+        persistTokens();
         updateSessionUsageUI();
 
         // Mostrar tokens en el mensaje
@@ -935,20 +1217,30 @@ async function streamAnthropic(asstRefs, accumulated) {
 
     const contextMessages = buildContext(false); // Anthropic: sin system en messages
 
+    // Prompt caching: el system prompt se cachea para ahorrar tokens de entrada.
+    // Anthropic cobra 0.1× el precio normal en lecturas de caché (ahorro ~90%).
+    // Se requiere el beta header 'prompt-caching-2024-07-31'.
+    const systemBlock = cfg.systemPrompt
+        ? [{ type: 'text', text: cfg.systemPrompt, cache_control: { type: 'ephemeral' } }]
+        : undefined;
+
     const body = {
         model:      cfg.anthropicModel,
         max_tokens: cfg.maxTokens,
-        system:     cfg.systemPrompt,
         messages:   contextMessages,
         stream:     true
     };
 
+    // Solo incluir system si hay system prompt
+    if (systemBlock) body.system = systemBlock;
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
-            'Content-Type':   'application/json',
-            'x-api-key':      cfg.anthropicKey,
+            'Content-Type':      'application/json',
+            'x-api-key':         cfg.anthropicKey,
             'anthropic-version': '2023-06-01',
+            'anthropic-beta':    'prompt-caching-2024-07-31',
             'anthropic-dangerous-direct-browser-access': 'true'
         },
         signal: abortController.signal,
@@ -988,7 +1280,15 @@ async function streamAnthropic(asstRefs, accumulated) {
                     }
 
                     if (json.type === 'message_start' && json.message?.usage) {
-                        usageInput = json.message.usage.input_tokens || 0;
+                        // input_tokens ya descuenta los cache_read_input_tokens
+                        const u = json.message.usage;
+                        usageInput = (u.input_tokens || 0)
+                                   + (u.cache_creation_input_tokens || 0);
+                        // Log de caché para debugging
+                        if (u.cache_read_input_tokens > 0) {
+                            console.debug(
+                                `[CalenturaChat] Prompt cache HIT: ${u.cache_read_input_tokens.toLocaleString()} tokens ahorrados`);
+                        }
                     }
                 } catch { /* fragmento incompleto */ }
             }
@@ -1011,6 +1311,8 @@ function buildContext(includeSystem = true) {
         msgs = msgs.slice(msgs.length - cfg.maxContext);
     }
 
+    // Nota: los mensajes cuyo content es un array (visión) se pasan tal cual a la API.
+    // Solo los mensajes de texto puro llevan el system prompt inline para OpenAI.
     if (includeSystem && cfg.systemPrompt) {
         return [{ role: 'system', content: cfg.systemPrompt }, ...msgs];
     }

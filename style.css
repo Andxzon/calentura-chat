@@ -803,6 +803,134 @@ a { color: var(--accent-light); text-underline-offset: 3px; }
     gap: 8px;
 }
 
+/* ---- Botón de adjuntar ---- */
+.attach-btn {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel2);
+    color: var(--muted);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+    margin-bottom: 3px;
+}
+.attach-btn svg { width: 16px; height: 16px; }
+.attach-btn:hover {
+    background: var(--panel3);
+    color: var(--text2);
+    border-color: var(--border2);
+}
+.attach-btn.has-files {
+    color: var(--accent-light);
+    border-color: rgba(99,102,241,.5);
+    background: rgba(99,102,241,.1);
+}
+
+/* ---- Preview de adjuntos ---- */
+.attachment-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 4px 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+
+.attachment-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 5px 8px 5px 6px;
+    font-size: 12px;
+    color: var(--text2);
+    max-width: 220px;
+    transition: border-color var(--transition);
+    animation: chipIn .15s ease-out;
+}
+
+@keyframes chipIn {
+    from { opacity: 0; transform: scale(.9) translateY(4px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.attachment-chip:hover { border-color: var(--border2); }
+
+/* Miniatura de imagen dentro del chip */
+.attachment-chip .chip-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+/* Icono de documento (no imagen) */
+.attachment-chip .chip-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    background: rgba(99,102,241,.15);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    color: var(--accent-light);
+}
+.attachment-chip .chip-icon svg { width: 14px; height: 14px; }
+
+.attachment-chip .chip-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+    font-size: 11.5px;
+}
+
+.attachment-chip .chip-type {
+    font-size: 10px;
+    color: var(--muted);
+    flex-shrink: 0;
+}
+
+.attachment-chip .chip-remove {
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    color: var(--muted);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 50%;
+    padding: 0;
+    transition: color var(--transition), background var(--transition);
+    margin-left: 2px;
+}
+.attachment-chip .chip-remove:hover {
+    color: var(--danger);
+    background: rgba(239,68,68,.1);
+}
+.attachment-chip .chip-remove svg { width: 11px; height: 11px; stroke-width: 2.5; }
+
+/* Imagen adjunta en burbuja de usuario */
+.user-attached-image {
+    max-width: 280px;
+    max-height: 200px;
+    border-radius: 10px;
+    object-fit: cover;
+    margin-top: 8px;
+    display: block;
+    border: 1px solid var(--border2);
+}
+
+
+
 textarea#prompt {
     flex: 1;
     min-height: 45px;

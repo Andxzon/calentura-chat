@@ -161,7 +161,20 @@
         <div class="composer-area">
             <div class="composer" id="composer">
 
+                <!-- Preview de archivos adjuntos (se muestra solo cuando hay archivos) -->
+                <div class="attachment-preview" id="attachmentPreview" style="display:none"></div>
+
                 <div class="input-row">
+                    <!-- Botón adjuntar -->
+                    <button id="attachBtn" class="attach-btn" onclick="triggerFileInput()" title="Adjuntar archivo (PDF, imagen, texto)">
+                        <i data-lucide="paperclip"></i>
+                    </button>
+
+                    <!-- Input oculto -->
+                    <input type="file" id="fileInput" multiple
+                        accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.js,.ts,.py,.css,.yaml,.yml,.log,image/*"
+                        style="display:none" onchange="onFilesSelected(event)">
+
                     <textarea
                         id="prompt"
                         placeholder="Escribe un mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
@@ -275,12 +288,9 @@
                 <label for="anthropicDefaultModel">Modelo por defecto</label>
                 <div class="input-with-btn">
                     <select id="anthropicDefaultModel" class="full-select">
-                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-                        <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (2024-10-22)</option>
+                        <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
                         <option value="claude-sonnet-5">Claude Sonnet 5</option>
-                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (2024-10-22)</option>
                         <option value="claude-opus-5">Claude Opus 5</option>
-                        <option value="claude-3-opus-20240229">Claude 3 Opus (2024-02-29)</option>
                         <option value="claude-fable-5-1">Claude Fable 5.1</option>
                     </select>
                 </div>
