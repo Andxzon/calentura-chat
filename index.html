@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>CalenturaChat 😋 — AI Conversacional</title>
+<meta name="description" content="Chat conversacional multi-proveedor: OpenAI, Anthropic Claude y modelos locales. Historial persistente, control de tokens y créditos.">
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Lucide Icons (SVG icon library) -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<!-- KaTeX: fórmulas LaTeX -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@latest/dist/contrib/auto-render.min.js"></script>
+
+<!-- Marked: Markdown → HTML -->
+<script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- DOMPurify: sanitización HTML -->
+<script defer src="https://cdn.jsdelivr.net/npm/dompurify@latest/dist/purify.min.js"></script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app" id="app">
+
+    <!-- ============================
+         SIDEBAR (historial de chats)
+         ============================ -->
+    <aside class="sidebar" id="sidebar">
+
+        <div class="sidebar-header">
+            <div class="brand">
+                <div class="logo-icon">
+                    <i data-lucide="bot"></i>
+                </div>
+                <span class="brand-name">CalenturaChat 😋</span>
+            </div>
+            <button class="icon-btn sidebar-close-btn" id="sidebarCloseBtn" title="Cerrar sidebar">
+                <i data-lucide="panel-left-close"></i>
+            </button>
+        </div>
+
+        <button class="new-chat-btn" id="newChatBtn" onclick="newChat()">
+            <i data-lucide="plus"></i>
+            <span>Nuevo chat</span>
+        </button>
+
+        <div class="chat-history" id="chatHistory">
+            <!-- Llenado dinámicamente por JS -->
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="sidebar-footer-btn" onclick="openSettings()" id="settingsBtn" title="Configuración">
+                <i data-lucide="settings"></i>
+                <span>Configuración</span>
+            </button>
+            <button class="sidebar-footer-btn" onclick="openCredits()" id="creditsBtn" title="Créditos">
+                <i data-lucide="credit-card"></i>
+                <span>Créditos</span>
+            </button>
+        </div>
+
+    </aside>
+
+    <!-- ============================
+         MAIN CONTENT
+         ============================ -->
+    <div class="main" id="main">
+
+        <!-- HEADER -->
+        <header class="header">
+
+            <div class="header-left">
+                <button class="icon-btn" id="sidebarToggleBtn" onclick="toggleSidebar()" title="Historial de chats">
+                    <i data-lucide="panel-left"></i>
+                </button>
+
+                <!-- Provider + Model selector -->
+                <div class="model-selector" id="modelSelectorArea">
+
+                    <div class="provider-selector-wrap">
+                        <select id="providerSelect" class="provider-select" onchange="onProviderChange()">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="local">Local</option>
+                        </select>
+                        <i data-lucide="chevron-down" class="select-arrow"></i>
+                    </div>
+
+                    <span class="selector-divider">/</span>
+
+                    <div class="model-selector-wrap">
+                        <select id="modelSelect" class="model-select" onchange="onModelChange()">
+                            <!-- Llenado por JS según el proveedor -->
+                        </select>
+                        <i data-lucide="chevron-down" class="select-arrow"></i>
+                    </div>
+
+                    <button class="model-price-btn" id="modelPriceBadge" title="Costo por 1M de tokens (Entrada/Salida)">
+                        <i data-lucide="coins"></i> --
+                    </button>
+
+                </div>
+            </div>
+
+            <div class="header-right">
+
+                <div class="status-indicator" id="statusIndicator" title="Estado de conexión">
+                    <span id="statusDot" class="status-dot"></span>
+                    <span id="statusText" class="status-text">Desconectado</span>
+                </div>
+
+                <div class="token-badge" id="tokenBadge" title="Tokens usados en esta sesión">
+                    <i data-lucide="zap"></i>
+                    <span id="tokenCount">0</span>
+                </div>
+
+                <button class="icon-btn" onclick="clearChat()" title="Limpiar chat" id="clearBtn">
+                    <i data-lucide="trash-2"></i>
+                </button>
+
+            </div>
+
+        </header>
+
+        <!-- CHAT AREA -->
+        <main id="chat" class="chat">
+            <div id="chatInner" class="chat-inner">
+
+                <div id="welcome" class="welcome">
+                    <div class="welcome-icon">
+                        <i data-lucide="sparkles"></i>
+                    </div>
+                    <h1>CalenturaChat 😋</h1>
+                    <p>Selecciona un proveedor y modelo arriba, luego empieza a conversar.<br>OpenAI, Anthropic Claude y modelos locales — todo en un lugar.</p>
+                    <div class="welcome-providers">
+                        <div class="provider-chip" onclick="setProvider('openai')">
+                            <i data-lucide="cpu"></i> OpenAI
+                        </div>
+                        <div class="provider-chip" onclick="setProvider('anthropic')">
+                            <i data-lucide="atom"></i> Anthropic
+                        </div>
+                        <div class="provider-chip" onclick="setProvider('local')">
+                            <i data-lucide="server"></i> Local
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- COMPOSER -->
+        <div class="composer-area">
+            <div class="composer" id="composer">
+
+                <div class="input-row">
+                    <textarea
+                        id="prompt"
+                        placeholder="Escribe un mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
+                        rows="1"
+                        autocomplete="off"
+                        spellcheck="true"
+                    ></textarea>
+
+                    <button id="send" class="send-btn" onclick="handleSendButton()" title="Enviar">
+                        <i data-lucide="send" id="sendIcon"></i>
+                    </button>
+                </div>
+
+                <div class="tools">
+                    <button id="thinkingBtn" class="tool-btn" onclick="toggleThinking()" title="Activar/desactivar razonamiento extendido">
+                        <i data-lucide="brain"></i>
+                        <span>Razonamiento: OFF</span>
+                    </button>
+
+                    <div class="tools-right">
+                        <span class="context-info" id="contextInfo" title="Mensajes en contexto">
+                            <i data-lucide="messages-square"></i>
+                            <span id="contextCount">0</span> msgs
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div><!-- /.main -->
+
+</div><!-- /.app -->
+
+
+<!-- ============================
+     MODAL: CONFIGURACIÓN
+     ============================ -->
+<div id="modalBg" class="modal-bg" onclick="handleModalBgClick(event)">
+    <div class="modal" id="settingsModal">
+
+        <div class="modal-header">
+            <h2>
+                <i data-lucide="settings"></i>
+                Configuración
+            </h2>
+            <button class="icon-btn" onclick="closeSettings()" title="Cerrar">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="openai" onclick="switchTab('openai')">
+                <i data-lucide="cpu"></i> OpenAI
+            </button>
+            <button class="tab" data-tab="anthropic" onclick="switchTab('anthropic')">
+                <i data-lucide="atom"></i> Anthropic
+            </button>
+            <button class="tab" data-tab="local" onclick="switchTab('local')">
+                <i data-lucide="server"></i> Local
+            </button>
+            <button class="tab" data-tab="general" onclick="switchTab('general')">
+                <i data-lucide="sliders-horizontal"></i> General
+            </button>
+        </div>
+
+        <!-- Tab: OpenAI -->
+        <div class="tab-content active" id="tab-openai">
+            <div class="field">
+                <label for="openaiKey">API Key de OpenAI</label>
+                <div class="input-with-btn">
+                    <input id="openaiKey" type="password" placeholder="sk-...">
+                    <button type="button" class="btn icon-only" onclick="toggleVisibility('openaiKey')" title="Ver/ocultar">
+                        <i data-lucide="eye" id="openaiKeyEye"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="field">
+                <label for="openaiDefaultModel">Modelo por defecto</label>
+                <div class="input-with-btn">
+                    <select id="openaiDefaultModel" class="full-select">
+                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                        <option value="o3-mini">o3 Mini</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="o1-mini">o1 Mini</option>
+                        <option value="gpt-4.1">GPT-4.1</option>
+                        <option value="o1">o1</option>
+                    </select>
+                </div>
+            </div>
+            <div class="info-box">
+                <i data-lucide="info"></i>
+                La API Key se guarda solo en tu dispositivo (localStorage). Nunca se envía a ningún servidor propio.
+            </div>
+        </div>
+
+        <!-- Tab: Anthropic -->
+        <div class="tab-content" id="tab-anthropic">
+            <div class="field">
+                <label for="anthropicKey">API Key de Anthropic</label>
+                <div class="input-with-btn">
+                    <input id="anthropicKey" type="password" placeholder="sk-ant-...">
+                    <button type="button" class="btn icon-only" onclick="toggleVisibility('anthropicKey')" title="Ver/ocultar">
+                        <i data-lucide="eye" id="anthropicKeyEye"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="field">
+                <label for="anthropicDefaultModel">Modelo por defecto</label>
+                <div class="input-with-btn">
+                    <select id="anthropicDefaultModel" class="full-select">
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                        <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku (2024-10-22)</option>
+                        <option value="claude-sonnet-5">Claude Sonnet 5</option>
+                        <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (2024-10-22)</option>
+                        <option value="claude-opus-5">Claude Opus 5</option>
+                        <option value="claude-3-opus-20240229">Claude 3 Opus (2024-02-29)</option>
+                        <option value="claude-fable-5-1">Claude Fable 5.1</option>
+                    </select>
+                </div>
+            </div>
+            <div class="info-box">
+                <i data-lucide="info"></i>
+                Anthropic requiere CORS habilitado. Si usas un navegador con restricciones, necesitarás un proxy.
+            </div>
+        </div>
+
+        <!-- Tab: Local -->
+        <div class="tab-content" id="tab-local">
+            <div class="field">
+                <label for="localKey">API Key de Local (si requiere)</label>
+                <div class="input-with-btn">
+                    <input id="localKey" type="password" placeholder="sk-...">
+                    <button type="button" class="btn icon-only" onclick="toggleVisibility('localKey')" title="Ver/ocultar">
+                        <i data-lucide="eye" id="localKeyEye"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="field">
+                <label for="localApiUrl">URL de API (compatible con OpenAI)</label>
+                <input id="localApiUrl" placeholder="http://localhost:8080/v1">
+            </div>
+            <div class="field">
+                <label for="localModel">Modelo</label>
+                <div class="input-with-btn">
+                    <input id="localModel" placeholder="llama-3-8b.gguf">
+                    <button type="button" class="btn icon-only" id="detectModelBtn" onclick="detectLocalModel()" title="Auto-detectar modelo">
+                        <i data-lucide="search" id="detectIcon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: General -->
+        <div class="tab-content" id="tab-general">
+            <div class="field">
+                <label for="systemPrompt">System Prompt</label>
+                <textarea id="systemPrompt" class="modal-textarea" placeholder="Eres un asistente útil, directo y conversacional." rows="4"></textarea>
+            </div>
+            <div class="field">
+                <label for="maxContext">Máximo de mensajes en contexto</label>
+                <input id="maxContext" type="number" min="2" max="100" value="20" style="width:100px">
+                <span class="field-hint">Limita el historial enviado a la IA para ahorrar tokens.</span>
+            </div>
+            <div class="field">
+                <label for="maxTokens">Max tokens por respuesta</label>
+                <input id="maxTokens" type="number" min="128" max="16000" value="2048" style="width:120px">
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn" onclick="closeSettings()">
+                <i data-lucide="x"></i> Cancelar
+            </button>
+            <button class="btn primary" onclick="saveSettings()">
+                <i data-lucide="save"></i> Guardar
+            </button>
+        </div>
+
+    </div>
+</div>
+
+
+<!-- ============================
+     MODAL: CRÉDITOS / USO
+     ============================ -->
+<div id="creditsModalBg" class="modal-bg" onclick="handleCreditsBgClick(event)">
+    <div class="modal" id="creditsModal">
+
+        <div class="modal-header">
+            <h2>
+                <i data-lucide="bar-chart-2"></i>
+                Créditos y Uso
+            </h2>
+            <button class="icon-btn" onclick="closeCredits()" title="Cerrar">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <div class="credits-grid">
+
+            <!-- OpenAI -->
+            <div class="credits-card" id="openaiCreditsCard">
+                <div class="credits-card-header">
+                    <i data-lucide="cpu"></i>
+                    <strong>OpenAI</strong>
+                    <button class="btn small" onclick="fetchOpenAICredits()">
+                        <i data-lucide="refresh-cw"></i> Actualizar
+                    </button>
+                </div>
+                <div class="credits-body" id="openaiCreditsBody">
+                    <span class="muted">Haz clic en Actualizar para ver el balance.</span>
+                </div>
+            </div>
+
+            <!-- Anthropic -->
+            <div class="credits-card" id="anthropicCreditsCard">
+                <div class="credits-card-header">
+                    <i data-lucide="atom"></i>
+                    <strong>Anthropic</strong>
+                    <button class="btn small" onclick="fetchAnthropicCredits()">
+                        <i data-lucide="refresh-cw"></i> Actualizar
+                    </button>
+                </div>
+                <div class="credits-body" id="anthropicCreditsBody">
+                    <span class="muted">Haz clic en Actualizar para ver el balance.</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Uso de esta sesión -->
+        <div class="session-usage">
+            <h3><i data-lucide="zap"></i> Uso en esta sesión</h3>
+            <div class="usage-row">
+                <span>Tokens de entrada:</span>
+                <strong id="sessionInputTokens">0</strong>
+            </div>
+            <div class="usage-row">
+                <span>Tokens de salida:</span>
+                <strong id="sessionOutputTokens">0</strong>
+            </div>
+            <div class="usage-row total">
+                <span>Total:</span>
+                <strong id="sessionTotalTokens">0</strong>
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn primary" onclick="closeCredits()">
+                <i data-lucide="check"></i> Cerrar
+            </button>
+        </div>
+
+    </div>
+</div>
+
+
+<script src="script.js" defer></script>
+
+</body>
+</html>
