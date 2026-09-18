@@ -213,6 +213,26 @@
 
 </div><!-- /.app -->
 
+<!-- ============================
+     MODAL: CONFIRMAR ELIMINACIÓN
+     ============================ -->
+<div id="confirmDeleteBg" class="confirm-delete-bg" onclick="cancelDeleteChat()">
+    <div class="confirm-delete-modal" onclick="event.stopPropagation()">
+        <div class="confirm-delete-icon">
+            <i data-lucide="alert-triangle"></i>
+        </div>
+        <h3>¿Eliminar este chat?</h3>
+        <p id="confirmDeleteTitle" class="confirm-delete-subtitle">Esta acción no se puede deshacer.</p>
+        <div class="confirm-delete-actions">
+            <button class="confirm-delete-cancel" onclick="cancelDeleteChat()">
+                <i data-lucide="x"></i> Cancelar
+            </button>
+            <button class="confirm-delete-yes" id="confirmDeleteBtn" onclick="confirmDeleteChat()">
+                <i data-lucide="trash-2"></i> Eliminar
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- ============================
      MODAL: CONFIGURACIÓN

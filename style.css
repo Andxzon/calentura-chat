@@ -572,16 +572,105 @@ a { color: var(--accent-light); text-underline-offset: 3px; }
     border-radius: 5px;
 }
 
+/* Token info badge */
 .token-info {
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 500;
     color: var(--muted);
     margin-left: auto;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 7px;
 }
 
-.token-info svg { width: 11px; height: 11px; }
+.token-info svg, .token-info i {
+    width: 12px;
+    height: 12px;
+    color: var(--warning);
+}
+
+/* Thinking block (Razonamiento) */
+details.thinking {
+    margin: 6px 0 12px 0;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+details.thinking[open] {
+    border-color: rgba(99, 102, 241, 0.4);
+}
+
+details.thinking summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-light);
+    cursor: pointer;
+    user-select: none;
+    background: rgba(99, 102, 241, 0.08);
+    transition: background 0.2s;
+    list-style: none;
+}
+
+details.thinking summary::-webkit-details-marker {
+    display: none;
+}
+
+details.thinking summary::after {
+    content: "▸";
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+    transition: transform 0.2s ease;
+}
+
+details.thinking[open] summary::after {
+    transform: rotate(90deg);
+}
+
+details.thinking summary:hover {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+details.thinking summary svg,
+details.thinking summary i {
+    width: 14px;
+    height: 14px;
+    color: var(--accent);
+}
+
+.thinking-content {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text2);
+    border-top: 1px solid rgba(99, 102, 241, 0.15);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.think-cursor {
+    display: inline-block;
+    color: var(--accent-light);
+    margin-left: 2px;
+    animation: blink 0.8s step-start infinite;
+}
+
+
+
 
 .text {
     font-size: 15px;
@@ -1531,8 +1620,139 @@ textarea#prompt::placeholder { color: var(--muted); }
 .credits-link svg { width: 14px; height: 14px; flex-shrink: 0; }
 
 /* =========================
+   CONFIRM DELETE MODAL
+========================= */
+
+.confirm-delete-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.confirm-delete-bg.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.confirm-delete-modal {
+    background: var(--panel2);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 28px 32px;
+    max-width: 380px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(239, 68, 68, 0.1);
+    transform: scale(0.9) translateY(10px);
+    transition: transform 0.25s ease;
+}
+
+.confirm-delete-bg.visible .confirm-delete-modal {
+    transform: scale(1) translateY(0);
+}
+
+.confirm-delete-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+}
+
+.confirm-delete-icon svg,
+.confirm-delete-icon i {
+    width: 26px;
+    height: 26px;
+    color: var(--danger);
+}
+
+.confirm-delete-modal h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 8px;
+}
+
+.confirm-delete-subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 22px;
+    line-height: 1.5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.confirm-delete-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.confirm-delete-cancel,
+.confirm-delete-yes {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+    font-family: 'Inter', sans-serif;
+}
+
+.confirm-delete-cancel {
+    background: var(--panel3);
+    color: var(--text2);
+    border: 1px solid var(--border2);
+}
+
+.confirm-delete-cancel:hover {
+    background: var(--border);
+    color: var(--text);
+}
+
+.confirm-delete-yes {
+    background: var(--danger);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+}
+
+.confirm-delete-yes:hover {
+    background: #dc2626;
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.45);
+    transform: translateY(-1px);
+}
+
+.confirm-delete-cancel svg,
+.confirm-delete-cancel i,
+.confirm-delete-yes svg,
+.confirm-delete-yes i {
+    width: 14px;
+    height: 14px;
+}
+
+/* =========================
    MOBILE
 ========================= */
+
 
 @media (max-width: 700px) {
 

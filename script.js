@@ -87,6 +87,10 @@ function saveConfig() {
 
 let cfg = loadConfig();
 
+if (cfg.localModel) {
+    PROVIDERS.local.models = [{ id: cfg.localModel, label: cfg.localModel }];
+}
+
 /* =========================================================
    ESTADO
    ========================================================= */
@@ -240,6 +244,16 @@ function createNewChat() {
     persistChats();
     openChat(id);
     renderChatHistory();
+
+    // Resetear estado visual
+    setSendState(false);
+    setStatusNeutral();
+
+    // Cerrar sidebar en móvil
+    if (window.innerWidth <= 700 && sidebar) {
+        sidebarOpen = false;
+        sidebar.classList.add('collapsed');
+    }
 }
 
 function openChat(id) {
@@ -251,6 +265,12 @@ function openChat(id) {
     renderChatHistory();
     renderChatMessages();
     updateContextCount();
+
+    // Cerrar sidebar en móvil
+    if (window.innerWidth <= 700 && sidebar) {
+        sidebarOpen = false;
+        sidebar.classList.add('collapsed');
+    }
 }
 
 function updateActiveChat(newMessages, autoTitle = false) {
@@ -272,10 +292,37 @@ function updateActiveChat(newMessages, autoTitle = false) {
     renderChatHistory();
 }
 
+let pendingDeleteChatId = null;
+
 function deleteChat(id, event) {
     event.stopPropagation();
+    pendingDeleteChatId = id;
+
+    // Show chat title in the modal
+    const chat = chats.find(c => c.id === id);
+    const titleEl = $('confirmDeleteTitle');
+    if (titleEl && chat) {
+        titleEl.textContent = `"${chat.title}" — Esta acción no se puede deshacer.`;
+    }
+
+    const bg = $('confirmDeleteBg');
+    if (bg) {
+        bg.classList.add('visible');
+        if (window.lucide) lucide.createIcons({ nodes: [bg] });
+    }
+}
+
+function confirmDeleteChat() {
+    if (!pendingDeleteChatId) return;
+    const id = pendingDeleteChatId;
+    pendingDeleteChatId = null;
+
     chats = chats.filter(c => c.id !== id);
     persistChats();
+
+    // Resetear estado visual (quitar botón rojo si había error)
+    setSendState(false);
+    setStatusNeutral();
 
     if (activeChatId === id) {
         if (chats.length > 0) openChat(chats[0].id);
@@ -283,7 +330,16 @@ function deleteChat(id, event) {
     } else {
         renderChatHistory();
     }
+
+    cancelDeleteChat();
 }
+
+function cancelDeleteChat() {
+    pendingDeleteChatId = null;
+    const bg = $('confirmDeleteBg');
+    if (bg) bg.classList.remove('visible');
+}
+
 
 function renderChatHistory() {
     const container = $('chatHistory');
@@ -533,6 +589,9 @@ function saveSettings() {
     if ($('localKey')) cfg.localKey = $('localKey').value.trim();
     cfg.localApiUrl    = $('localApiUrl').value.trim().replace(/\/$/, '');
     cfg.localModel     = $('localModel').value.trim();
+    if (cfg.localModel) {
+        PROVIDERS.local.models = [{ id: cfg.localModel, label: cfg.localModel }];
+    }
     cfg.systemPrompt   = $('systemPrompt').value.trim();
     cfg.maxContext     = Math.max(2, Number($('maxContext').value) || 20);
     cfg.maxTokens      = Math.max(128, Number($('maxTokens').value) || 2048);
@@ -582,6 +641,7 @@ async function detectLocalModel() {
 
         if (firstId) {
             $('localModel').value = firstId;
+            PROVIDERS.local.models = [{ id: firstId, label: firstId }];
             if (icon) { icon.setAttribute('data-lucide','check'); lucide.createIcons({nodes:[btn]}); }
         } else {
             if (icon) { icon.setAttribute('data-lucide','x'); lucide.createIcons({nodes:[btn]}); }
@@ -1358,6 +1418,17 @@ async function streamOpenAI(asstRefs, accumulated) {
     }
 
     updateAssistantView(asstRefs, fullText);
+
+    // Si el servidor local no devolvió usage, estimamos (~4 chars por token)
+    if (cfg.provider === 'local' && usageInput === 0 && usageOutput === 0) {
+        const contextChars = contextMessages.reduce((acc, m) => {
+            const c = m.content;
+            return acc + (typeof c === 'string' ? c.length : JSON.stringify(c).length);
+        }, 0);
+        usageInput  = Math.round(contextChars / 4);
+        usageOutput = Math.round(fullText.length / 4);
+    }
+
     return { fullText, usageInput, usageOutput };
 }
 
@@ -1573,22 +1644,46 @@ function showTokenInfoOnMessage(refs, inputTokens, outputTokens) {
     const zapIcon = document.createElement('i');
     zapIcon.setAttribute('data-lucide', 'zap');
     tokenEl.appendChild(zapIcon);
-    tokenEl.appendChild(document.createTextNode(` ${(inputTokens + outputTokens).toLocaleString()} tokens`));
+
+    const total = inputTokens + outputTokens;
+    const isLocal = cfg.provider === 'local';
+    const prefix = isLocal ? '~' : '';
+    const suffix = isLocal ? ' (est.)' : '';
+    tokenEl.appendChild(document.createTextNode(` ${prefix}${total.toLocaleString()} tokens${suffix}`));
+    tokenEl.title = `↓ entrada: ${prefix}${inputTokens.toLocaleString()}  ↑ salida: ${prefix}${outputTokens.toLocaleString()}`;
+
     refs.nameEl.appendChild(tokenEl);
     if (window.lucide) lucide.createIcons({ nodes: [tokenEl] });
 }
 
-/* Actualiza burbuja del asistente con texto acumulado */
 function updateAssistantView(refs, rawText) {
     const parsed = splitThinking(rawText);
 
     if (parsed.thinking !== null && refs.thinkingDetails) {
         refs.thinkingDetails.style.display = 'block';
-        refs.thinkingContent.textContent   = parsed.thinking;
+
+        // Mostrar el razonamiento con markdown básico
+        if (refs.thinkingContent) {
+            // Durante el streaming mostramos en tiempo real con un cursor parpadeante
+            if (parsed.inProgress) {
+                refs.thinkingContent.innerHTML =
+                    (window.DOMPurify
+                        ? DOMPurify.sanitize(parsed.thinking.replace(/\n/g, '<br>'))
+                        : parsed.thinking.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'))
+                    + '<span class="think-cursor">▊</span>';
+            } else {
+                refs.thinkingContent.innerHTML =
+                    window.DOMPurify
+                        ? DOMPurify.sanitize(parsed.thinking.replace(/\n/g, '<br>'))
+                        : parsed.thinking.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+            }
+        }
 
         if (parsed.inProgress) {
+            // Mientras razona: mostrar abierto
             refs.thinkingDetails.open = true;
         } else if (!refs.collapsedOnce) {
+            // Al terminar: colapsar automáticamente (solo la primera vez)
             refs.thinkingDetails.open = false;
             refs.collapsedOnce = true;
         }
