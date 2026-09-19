@@ -26,6 +26,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/dompurify@latest/dist/purify.min.js"></script>
 
 <link rel="stylesheet" href="style.css">
+<script defer src="voice.js"></script>
 </head>
 <body>
 
@@ -155,6 +156,19 @@
                 </div>
 
             </div>
+
+            <!-- VOICE MODE UI OVERLAY -->
+            <div id="voiceOverlay" class="voice-overlay" style="display: none;">
+                <div class="voice-status-container">
+                    <div class="voice-avatar" id="voiceAvatar">
+                        🤖
+                    </div>
+                    <div class="voice-status-text" id="voiceStatusText">IDLE</div>
+                    <button class="voice-close-btn" onclick="toggleVoiceMode()" title="Salir de Voz">
+                        <i data-lucide="x"></i> Salir
+                    </button>
+                </div>
+            </div>
         </main>
 
         <!-- COMPOSER -->
@@ -189,6 +203,10 @@
                 </div>
 
                 <div class="tools">
+                    <button id="voiceModeBtn" class="tool-btn" onclick="toggleVoiceMode()" title="Activar Modo Conversación por Voz">
+                        <i data-lucide="mic"></i>
+                        <span id="voiceModeText">Voz: OFF</span>
+                    </button>
                     <button id="thinkingBtn" class="tool-btn" onclick="toggleThinking()" title="Activar/desactivar razonamiento extendido">
                         <i data-lucide="brain"></i>
                         <span>Razonamiento: OFF</span>
