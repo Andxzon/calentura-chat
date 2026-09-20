@@ -154,30 +154,60 @@ a { color: var(--accent-light); text-underline-offset: 3px; }
     white-space: nowrap;
 }
 
-/* New chat button */
-.new-chat-btn {
+/* New chat / new project buttons */
+.new-buttons-row {
+    display: flex;
+    gap: 8px;
+    margin: 12px 10px 8px;
+    flex-shrink: 0;
+}
+
+.new-chat-btn, .new-project-btn {
     display: flex;
     align-items: center;
-    gap: 9px;
-    margin: 12px 10px 8px;
-    padding: 10px 14px;
+    justify-content: center;
+    gap: 8px;
+    flex: 1;
+    margin: 0;
+    padding: 10px 10px;
     border: 1px dashed var(--border2);
     border-radius: 12px;
     background: transparent;
     color: var(--text2);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 600;
+    white-space: nowrap;
     transition: background var(--transition), border-color var(--transition), color var(--transition);
-    flex-shrink: 0;
 }
 
-.new-chat-btn svg { width: 16px; height: 16px; stroke-width: 2.5; }
+.new-chat-btn svg, .new-project-btn svg { width: 16px; height: 16px; stroke-width: 2.5; flex-shrink: 0; }
 
 .new-chat-btn:hover {
     background: var(--panel2);
     border-color: var(--accent);
     color: var(--accent-light);
 }
+
+.new-project-btn {
+    border-style: solid;
+    border-color: var(--border);
+}
+
+.new-project-btn:hover {
+    background: var(--panel2);
+    border-color: #f59e0b;
+    color: #fbbf24;
+}
+
+/* Indicador de tipo de chat en el historial (proyecto vs chat normal) */
+.history-type-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--muted);
+}
+.history-type-icon svg { width: 13px; height: 13px; }
+.history-item.type-project .history-type-icon { color: #fbbf24; }
 
 /* Chat history list */
 .chat-history {
@@ -1968,3 +1998,299 @@ textarea#prompt::placeholder { color: var(--muted); }
     50% { transform: scale(1.05); box-shadow: 0 0 0 40px rgba(99, 102, 241, 0); }
     100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
 }
+
+/* =========================================================
+   PROYECTOS: barra de archivos, chips y contador de líneas
+   ========================================================= */
+
+.project-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    background: var(--panel2);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.project-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.project-bar-left > svg,
+.project-bar-left i { width: 15px; height: 15px; color: #fbbf24; }
+
+.project-bar-label {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.project-lines-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--panel3);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--accent-light);
+}
+.project-lines-badge svg { width: 11px; height: 11px; }
+
+.project-files-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.project-file-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 6px 4px 10px;
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition);
+    max-width: 220px;
+}
+.project-file-chip:hover { border-color: var(--accent); color: var(--accent-light); }
+.project-file-chip .chip-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 130px;
+}
+.project-file-chip .chip-file-lines {
+    color: var(--muted);
+    font-size: 10.5px;
+    flex-shrink: 0;
+}
+.project-file-chip .chip-remove {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 2px;
+    border-radius: 5px;
+    display: flex;
+    flex-shrink: 0;
+}
+.project-file-chip .chip-remove svg { width: 11px; height: 11px; }
+.project-file-chip .chip-remove:hover { color: var(--danger); }
+
+.project-files-empty {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+}
+
+.project-add-file-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px dashed var(--border2);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text2);
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.project-add-file-btn svg { width: 13px; height: 13px; }
+.project-add-file-btn:hover { border-color: var(--accent); color: var(--accent-light); background: var(--panel3); }
+
+/* Botón "danger" para el modal de previsualización */
+.btn.danger {
+    background: rgba(239, 68, 68, .1);
+    border-color: rgba(239, 68, 68, .35);
+    color: #fca5a5;
+}
+.btn.danger:hover { background: rgba(239, 68, 68, .18); border-color: var(--danger); color: #fecaca; }
+
+/* Modal de previsualización de archivo */
+.file-preview-modal { width: min(720px, 100%); }
+.file-preview-meta {
+    padding: 0 20px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    gap: 14px;
+}
+.file-preview-code {
+    margin: 12px 20px 0;
+    max-height: 50vh;
+    overflow: auto;
+    background: var(--panel3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--text2);
+    white-space: pre;
+}
+
+/* =========================================================
+   PROYECTOS: tarjetas de ediciones propuestas por el agente
+   ========================================================= */
+
+.edit-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.edit-card {
+    border: 1px solid var(--border2);
+    border-radius: 14px;
+    background: var(--panel2);
+    overflow: hidden;
+}
+
+.edit-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    flex-wrap: wrap;
+}
+
+.edit-card-header .edit-card-icon { width: 15px; height: 15px; color: var(--accent-light); flex-shrink: 0; }
+
+.edit-card-filename {
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.edit-card-badge {
+    font-size: 10.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.edit-card-badge.new { background: rgba(99,102,241,.15); color: var(--accent-light); }
+
+.edit-card-stats {
+    font-size: 11.5px;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.edit-card-stats .added   { color: var(--success); }
+.edit-card-stats .removed { color: var(--danger); }
+
+.edit-card-spacer { flex: 1; }
+
+.edit-card-toggle {
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+.edit-card-toggle:hover { color: var(--accent-light); background: var(--panel3); }
+.edit-card-toggle svg { width: 12px; height: 12px; }
+
+.edit-card-diff {
+    display: none;
+    max-height: 340px;
+    overflow: auto;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.edit-card-diff.open { display: block; }
+
+.diff-line {
+    display: flex;
+    white-space: pre;
+    padding: 0 10px;
+}
+.diff-line .diff-line-mark { width: 16px; flex-shrink: 0; opacity: .8; user-select: none; }
+.diff-line.add { background: rgba(34, 197, 94, .12); color: #bbf7d0; }
+.diff-line.del { background: rgba(239, 68, 68, .12); color: #fecaca; }
+.diff-line.eq  { color: var(--muted); }
+
+.edit-card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.edit-card-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    flex: 1;
+    justify-content: center;
+}
+.edit-card-btn svg { width: 13px; height: 13px; }
+
+.edit-card-btn.accept {
+    background: rgba(34, 197, 94, .14);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, .35);
+}
+.edit-card-btn.accept:hover { background: rgba(34, 197, 94, .24); }
+
+.edit-card-btn.reject {
+    background: rgba(239, 68, 68, .1);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, .3);
+}
+.edit-card-btn.reject:hover { background: rgba(239, 68, 68, .18); }
+
+.edit-card-status {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.edit-card-status svg { width: 14px; height: 14px; }
+.edit-card-status.accepted { color: #86efac; }
+.edit-card-status.rejected { color: #fca5a5; }
+
+.edit-cards-bulk {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 2px;
+}
+.edit-cards-bulk .edit-card-btn { flex: none; padding: 6px 12px; font-size: 11.5px; }
