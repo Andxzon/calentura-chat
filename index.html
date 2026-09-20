@@ -207,10 +207,15 @@
                         <i data-lucide="mic"></i>
                         <span id="voiceModeText">Voz: OFF</span>
                     </button>
-                    <button id="thinkingBtn" class="tool-btn" onclick="toggleThinking()" title="Activar/desactivar razonamiento extendido">
+                    <button id="thinkingBtn" class="tool-btn" onclick="toggleThinking()" title="Activar/desactivar razonamiento extendido" style="display:none;">
                         <i data-lucide="brain"></i>
                         <span>Razonamiento: OFF</span>
                     </button>
+                    <div id="reasoningLevelWrap" class="reasoning-level-wrap" style="display:none;">
+                        <i data-lucide="brain"></i>
+                        <select id="reasoningLevelSelect" class="reasoning-select" onchange="onReasoningLevelChange()" title="Nivel de razonamiento">
+                        </select>
+                    </div>
                     <button id="magicPromptBtn" class="tool-btn" onclick="toggleMagicPrompt()" title="Mejora Mágica para Imágenes (GPT-Image)" style="display: none;">
                         <i data-lucide="wand-2"></i>
                         <span>Magia: OFF</span>

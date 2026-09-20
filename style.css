@@ -1094,6 +1094,56 @@ textarea#prompt::placeholder { color: var(--muted); }
     border-color: rgba(99, 102, 241, .4);
 }
 
+/* Reasoning level dropdown */
+.reasoning-level-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 4px 8px 4px 11px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.reasoning-level-wrap svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.reasoning-level-wrap:hover {
+    background: var(--panel3);
+    color: var(--text2);
+}
+
+.reasoning-level-wrap.active {
+    color: var(--accent-light);
+    background: rgba(99, 102, 241, .12);
+    border-color: rgba(99, 102, 241, .4);
+}
+
+.reasoning-select {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px 2px;
+    outline: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+.reasoning-select option {
+    background: var(--panel);
+    color: var(--text);
+    font-size: 13px;
+    padding: 6px 10px;
+}
+
 .tools-right {
     margin-left: auto;
     display: flex;

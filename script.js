@@ -97,6 +97,38 @@ let generating      = false;
 let abortController = null;
 let thinkingMode    = false;
 let magicPrompt     = false;
+let reasoningLevel  = 'medium'; // default reasoning level for new models
+
+// Modelos que soportan reasoning_effort y sus niveles disponibles
+const REASONING_LEVELS = {
+    'gpt-6-astra':  [
+        { value: 'low',    label: 'Ligero' },
+        { value: 'medium', label: 'Moderado' },
+        { value: 'high',   label: 'Profundo' },
+        { value: 'xhigh',  label: 'Muy Profundo' },
+    ],
+    'gpt-5.6-sol': [
+        { value: 'none',   label: 'Sin razonamiento' },
+        { value: 'low',    label: 'Ligero' },
+        { value: 'medium', label: 'Moderado' },
+        { value: 'high',   label: 'Profundo' },
+        { value: 'xhigh',  label: 'Muy Profundo' },
+    ],
+    'gpt-5.6-terra': [
+        { value: 'none',   label: 'Sin razonamiento' },
+        { value: 'low',    label: 'Ligero' },
+        { value: 'medium', label: 'Moderado' },
+        { value: 'high',   label: 'Profundo' },
+        { value: 'xhigh',  label: 'Muy Profundo' },
+    ],
+    'gpt-5.6-luna': [
+        { value: 'none',   label: 'Sin razonamiento' },
+        { value: 'low',    label: 'Ligero' },
+        { value: 'medium', label: 'Moderado' },
+        { value: 'high',   label: 'Profundo' },
+        { value: 'xhigh',  label: 'Muy Profundo' },
+    ],
+};
 
 const IMAGE_ENHANCER_PROMPT = `Act as an expert prompt engineer and digital artist. 
 The user will provide a short idea for an image. Your job is to rewrite it into a highly detailed, descriptive, and perfect English prompt for an image generation model.
@@ -416,7 +448,27 @@ function renderChatMessages() {
         if (msg.role === 'system') return;
         const refs = addMessageDOM(msg.role);
         if (msg.role === 'user') {
-            refs.textEl.textContent = msg.content.replace(/^\/think\n|^\/no_think\n/, '');
+            // Usar _display si existe (evita mostrar el contenido enorme de archivos)
+            const rawDisplay = msg._display ?? (typeof msg.content === 'string' ? msg.content : '');
+            const cleanDisplay = rawDisplay.replace(/^\/think\n|^\/no_think\n/, '');
+
+            // Separar texto limpio de los badges [doc:...] e [img:...]
+            const parts = cleanDisplay.split(/\s*\[(?:doc|img):[^\]]+\]/);
+            refs.textEl.textContent = parts[0].trim();
+
+            // Re-crear badges de archivos adjuntos
+            const badges = [...cleanDisplay.matchAll(/\[(doc|img):([^\]]+)\]/g)];
+            if (badges.length) {
+                const docInfo = document.createElement('div');
+                docInfo.style.cssText = 'margin-top:6px;font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px;';
+                badges.forEach(([, type, name]) => {
+                    const badge = document.createElement('span');
+                    badge.style.cssText = 'background:var(--panel3);border:1px solid var(--border);border-radius:6px;padding:2px 8px;';
+                    badge.textContent = (type === 'img' ? '🖼️ ' : '📎 ') + name;
+                    docInfo.appendChild(badge);
+                });
+                refs.textEl.appendChild(docInfo);
+            }
         } else {
             updateAssistantView(refs, msg.content);
         }
@@ -457,6 +509,7 @@ function populateModelSelect(provider) {
         setModelConfig(provider, models[0].id);
     }
     updateModelPriceUI(provider, sel.value);
+    updateReasoningUI(sel.value);
 }
 
 function updateModelPriceUI(provider, modelId) {
@@ -526,6 +579,58 @@ function onModelChange() {
     const sel = $('modelSelect');
     setModelConfig(cfg.provider, sel.value);
     updateModelPriceUI(cfg.provider, sel.value);
+    updateReasoningUI(sel.value);
+}
+
+/**
+ * Muestra/oculta el selector de nivel de razonamiento según el modelo seleccionado.
+ */
+function updateReasoningUI(modelId) {
+    const wrap = $('reasoningLevelWrap');
+    const thinkingBtn = $('thinkingBtn');
+    const levels = REASONING_LEVELS[modelId];
+
+    if (levels) {
+        // Modelo con reasoning levels — mostrar dropdown, ocultar toggle viejo
+        if (thinkingBtn) thinkingBtn.style.display = 'none';
+        if (wrap) {
+            wrap.style.display = 'flex';
+            const sel = $('reasoningLevelSelect');
+            sel.innerHTML = '';
+            levels.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.value;
+                opt.textContent = l.label;
+                sel.appendChild(opt);
+            });
+            // Restaurar valor guardado o usar medium por defecto
+            const saved = localStorage.getItem('nc_reasoning_level') || 'medium';
+            if (levels.find(l => l.value === saved)) {
+                sel.value = saved;
+                reasoningLevel = saved;
+            } else {
+                sel.value = levels[0].value;
+                reasoningLevel = levels[0].value;
+            }
+            // Estilo activo si no es 'none'
+            wrap.classList.toggle('active', reasoningLevel !== 'none');
+            if (window.lucide) lucide.createIcons({ nodes: [wrap] });
+        }
+    } else {
+        // Modelo sin reasoning levels — ocultar dropdown, mostrar toggle viejo para local
+        if (wrap) wrap.style.display = 'none';
+        if (thinkingBtn) {
+            thinkingBtn.style.display = (cfg.provider === 'local') ? '' : 'none';
+        }
+    }
+}
+
+function onReasoningLevelChange() {
+    const sel = $('reasoningLevelSelect');
+    reasoningLevel = sel.value;
+    localStorage.setItem('nc_reasoning_level', reasoningLevel);
+    const wrap = $('reasoningLevelWrap');
+    if (wrap) wrap.classList.toggle('active', reasoningLevel !== 'none');
 }
 
 function setProvider(provider) {
@@ -1157,7 +1262,16 @@ async function sendMessage() {
         : text;
 
     const userContent = buildUserContent(baseText, cfg.provider, attachmentsSnapshot);
-    activeMessages.push({ role: 'user', content: userContent });
+
+    // _display: texto visible en el chat (sin el contenido de archivos adjuntos).
+    // Se usa al recargar para no mostrar el bloque enorme de texto de los archivos.
+    const displayParts = [];
+    if (text) displayParts.push(text);
+    attachmentsSnapshot.forEach(a => {
+        if (a.fileType === 'image') displayParts.push(`[img:${a.name}]`);
+        else displayParts.push(`[doc:${a.name}]`);
+    });
+    activeMessages.push({ role: 'user', content: userContent, _display: displayParts.join(' ') || text });
 
     // Actualizar título si es el primer mensaje
     const isFirst = activeMessages.filter(m => m.role === 'user').length === 1;
@@ -1252,8 +1366,8 @@ async function generateImageOpenAI(asstRefs, promptText, modelId) {
 
         try {
             // Llamada al modelo de texto rápido para mejorar el prompt
-            // Usamos GPT-4o-mini por defecto para esto
-            const textModel = cfg.openaiModel.startsWith('gpt-') ? cfg.openaiModel : 'gpt-4o-mini';
+            // Usamos GPT-4.1 Mini por defecto para esto
+            const textModel = 'gpt-4.1-mini';
             const resOpt = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -1336,6 +1450,7 @@ async function streamOpenAI(asstRefs, accumulated) {
     let fullText    = accumulated;
     let usageInput  = 0;
     let usageOutput = 0;
+    let reasoningText    = '';   // acumula delta.reasoning_content del stream
     let renderScheduled = false;
 
     const scheduleRender = () => {
@@ -1359,21 +1474,33 @@ async function streamOpenAI(asstRefs, accumulated) {
 
     const contextMessages = buildContext();
 
+    // Todos los modelos usan /chat/completions (incluidos gpt-5.6-* y gpt-6-*).
+    // El endpoint /responses requiere un formato de input completamente distinto
+    // y no es compatible con el array {role,content} de chat/completions.
     const body = {
-        model:       modelId,
-        messages:    contextMessages,
-        stream:      true,
-        stream_options: { include_usage: true }
+        model:              modelId,
+        messages:           contextMessages,
+        stream:             true,
+        stream_options:     { include_usage: true }
     };
 
+    // max_tokens vs max_completion_tokens según familia de modelo
     if (modelId.startsWith('o1') || modelId.startsWith('o3')) {
+        body.max_completion_tokens = cfg.maxTokens;
+    } else if (modelId.startsWith('gpt-5.6') || modelId.startsWith('gpt-6')) {
         body.max_completion_tokens = cfg.maxTokens;
     } else {
         body.max_tokens = cfg.maxTokens;
     }
 
-    const endpoint = (cfg.provider === 'openai' && (modelId.startsWith('gpt-5.6') || modelId.startsWith('gpt-6'))) ? 'responses' : 'chat/completions';
-    const res = await fetch(`${baseUrl}/${endpoint}`, {
+    // Agregar reasoning_effort si el modelo lo soporta.
+    // Se omite si el valor es 'none', 'max' (no soportado por la API) o está vacío.
+    const VALID_REASONING = ['low', 'medium', 'high', 'xhigh'];
+    if (REASONING_LEVELS[modelId] && VALID_REASONING.includes(reasoningLevel)) {
+        body.reasoning_effort = reasoningLevel;
+    }
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         signal: abortController.signal,
@@ -1403,14 +1530,57 @@ async function streamOpenAI(asstRefs, accumulated) {
             if (data === '[DONE]') continue;
 
             try {
-                const json   = JSON.parse(data);
-                const delta  = json.choices?.[0]?.delta?.content;
-                if (delta) { fullText += delta; scheduleRender(); }
+                const json  = JSON.parse(data);
+                const delta = json.choices?.[0]?.delta || {};
 
-                // Uso de tokens (viene al final en stream_options)
+                // Razonamiento en tiempo real (modelos con reasoning_effort)
+                const reasoningDelta = delta.reasoning_content || '';
+                if (reasoningDelta) {
+                    reasoningText += reasoningDelta;
+                    // Mostrar panel de thinking en vivo
+                    if (asstRefs.thinkingDetails) {
+                        asstRefs.thinkingDetails.style.display = 'block';
+                        asstRefs.thinkingDetails.open = true;
+                    }
+                    if (asstRefs.thinkingContent) {
+                        const escaped = reasoningText
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/\n/g, '<br>');
+                        asstRefs.thinkingContent.innerHTML =
+                            (window.DOMPurify ? DOMPurify.sanitize(escaped) : escaped)
+                            + '<span class="think-cursor">▊</span>';
+                        scrollBottom();
+                    }
+                }
+
+                // Texto de respuesta normal
+                const content = delta.content || '';
+                if (content) {
+                    // Al empezar a responder: cerrar el thinking
+                    if (reasoningText && asstRefs.thinkingDetails && !asstRefs.collapsedOnce) {
+                        asstRefs.thinkingDetails.open = false;
+                        asstRefs.collapsedOnce = true;
+                        // Quitar cursor parpadeante del thinking
+                        if (asstRefs.thinkingContent) {
+                            const escaped = reasoningText
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/\n/g, '<br>');
+                            asstRefs.thinkingContent.innerHTML =
+                                window.DOMPurify ? DOMPurify.sanitize(escaped) : escaped;
+                        }
+                    }
+                    fullText += content;
+                    scheduleRender();
+                }
+
+                // Uso de tokens (viene al final gracias a stream_options.include_usage)
                 if (json.usage) {
-                    usageInput  = json.usage.prompt_tokens     || 0;
-                    usageOutput = json.usage.completion_tokens || 0;
+                    usageInput  = json.usage.prompt_tokens || json.usage.input_tokens || 0;
+                    usageOutput = json.usage.completion_tokens || json.usage.output_tokens || 0;
                 }
             } catch { /* fragmento incompleto */ }
         }
