@@ -314,12 +314,109 @@ function updateActiveChat(newMessages, autoTitle = false) {
     if (autoTitle && newMessages.length > 0) {
         const firstUser = newMessages.find(m => m.role === 'user');
         if (firstUser) {
-            chat.title = firstUser.content.replace(/\/think\n|\/no_think\n/g, '').slice(0, 42).trim() || 'Nuevo chat';
+            // Título temporal mientras la IA genera uno mejor
+            const rawContent = typeof firstUser.content === 'string'
+                ? firstUser.content
+                : (firstUser._display || 'Nuevo chat');
+            chat.title = rawContent.replace(/\/think\n|\/no_think\n/g, '').slice(0, 42).trim() || 'Nuevo chat';
+            // Generar título inteligente con IA en segundo plano
+            generateSmartTitle(chat.id, rawContent);
         }
     }
 
     persistChats();
     renderChatHistory();
+}
+
+/**
+ * Genera un título corto y descriptivo para el chat usando la IA.
+ * Se ejecuta en segundo plano sin bloquear la conversación.
+ */
+async function generateSmartTitle(chatId, userMessage) {
+    try {
+        const cleanMsg = (typeof userMessage === 'string' ? userMessage : JSON.stringify(userMessage))
+            .replace(/\/think\n|\/no_think\n/g, '')
+            .slice(0, 300);
+
+        let generatedTitle = null;
+
+        if (cfg.provider === 'openai' && cfg.openaiKey) {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${cfg.openaiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4.1-mini',
+                    messages: [
+                        { role: 'system', content: 'Genera un título MUY corto (máximo 5 palabras) que resuma el tema del mensaje del usuario. Solo responde con el título, sin comillas, sin puntuación final, sin explicación. Responde en el mismo idioma del mensaje.' },
+                        { role: 'user', content: cleanMsg }
+                    ],
+                    max_tokens: 30,
+                    temperature: 0.7
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                generatedTitle = data.choices?.[0]?.message?.content?.trim();
+            }
+        } else if (cfg.provider === 'anthropic' && cfg.anthropicKey) {
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': cfg.anthropicKey,
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-dangerous-direct-browser-access': 'true'
+                },
+                body: JSON.stringify({
+                    model: 'claude-haiku-4-5',
+                    max_tokens: 30,
+                    messages: [
+                        { role: 'user', content: 'Genera un título MUY corto (máximo 5 palabras) que resuma el tema de este mensaje. Solo responde con el título, sin comillas, sin puntuación final, sin explicación. Responde en el mismo idioma del mensaje.\n\nMensaje: ' + cleanMsg }
+                    ]
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                generatedTitle = data.content?.[0]?.text?.trim();
+            }
+        } else if (cfg.provider === 'local' && cfg.localApiUrl) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (cfg.localKey) headers['Authorization'] = `Bearer ${cfg.localKey}`;
+            const res = await fetch(`${cfg.localApiUrl}/chat/completions`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: cfg.localModel,
+                    messages: [
+                        { role: 'system', content: 'Genera un título MUY corto (máximo 5 palabras) que resuma el tema del mensaje del usuario. Solo responde con el título, sin comillas, sin puntuación final, sin explicación. Responde en el mismo idioma del mensaje.' },
+                        { role: 'user', content: cleanMsg }
+                    ],
+                    max_tokens: 30,
+                    temperature: 0.7
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                generatedTitle = data.choices?.[0]?.message?.content?.trim();
+            }
+        }
+
+        if (generatedTitle && generatedTitle.length > 0 && generatedTitle.length <= 60) {
+            // Limpiar comillas y puntuación final que la IA a veces agrega
+            generatedTitle = generatedTitle.replace(/^["'""«»]+|["'""«».]+$/g, '').trim();
+            const chat = chats.find(c => c.id === chatId);
+            if (chat) {
+                chat.title = generatedTitle;
+                persistChats();
+                renderChatHistory();
+            }
+        }
+    } catch (e) {
+        console.debug('[CalenturaChat 😋] No se pudo generar título inteligente:', e.message);
+    }
 }
 
 let pendingDeleteChatId = null;
@@ -1434,7 +1531,7 @@ async function generateImageOpenAI(asstRefs, promptText, modelId) {
     const revisedPrompt = item.revised_prompt || promptText;
 
     // Retornamos el markdown. Usaremos HTML inline para que la imagen se adapte mejor visualmente.
-    const fullText = `<img src="${url}" alt="${escHtml(revisedPrompt)}" referrerpolicy="no-referrer" style="max-width: 400px; max-height: 400px; width: 100%; object-fit: contain; border-radius:10px; margin-top:8px; border:1px solid var(--border2);">\n\n_${escHtml(revisedPrompt)}_`;
+    const fullText = `<img src="${url}" alt="Imagen generada" referrerpolicy="no-referrer" style="max-width: 400px; max-height: 400px; width: 100%; object-fit: contain; border-radius:10px; margin-top:8px; border:1px solid var(--border2);">`;
 
     updateAssistantView(asstRefs, fullText);
 
