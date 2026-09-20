@@ -259,17 +259,19 @@ function persistChats() {
     }
 }
 
-function createNewChat() {
+function createNewChat(type = 'chat') {
     const id = 'chat_' + Date.now();
     const chat = {
         id,
-        title: 'Nuevo chat',
+        type, // 'chat' | 'project'
+        title: type === 'project' ? 'Nuevo proyecto' : 'Nuevo chat',
         provider: cfg.provider,
         model: getCurrentModelId(),
         messages: [],
         createdAt: Date.now(),
         updatedAt: Date.now()
     };
+    if (type === 'project') chat.projectFiles = []; // { id, name, content }
     chats.unshift(chat);
     persistChats();
     openChat(id);
@@ -286,6 +288,20 @@ function createNewChat() {
     }
 }
 
+/**
+ * Crea un chat de tipo "proyecto": un entorno donde se pueden subir uno
+ * o varios archivos de código y la IA (especialmente el modelo local)
+ * puede proponer ediciones (agregar/quitar líneas) que el usuario acepta
+ * o rechaza antes de que se apliquen al archivo.
+ */
+function newProject() {
+    createNewChat('project');
+}
+
+function getActiveChat() {
+    return chats.find(c => c.id === activeChatId) || null;
+}
+
 function openChat(id) {
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
@@ -293,6 +309,7 @@ function openChat(id) {
 
     activeMessages = chat.messages;
     renderChatHistory();
+    renderProjectBar();
     renderChatMessages();
     updateContextCount();
 
@@ -503,9 +520,15 @@ function renderChatHistory() {
         html += `<div class="history-group-label">${g}</div>`;
         for (const chat of groups[g]) {
             const active = chat.id === activeChatId ? 'active' : '';
+            const isProject = chat.type === 'project';
+            const typeClass = isProject ? 'type-project' : '';
+            const typeIcon = isProject
+                ? `<span class="history-type-icon" title="Proyecto"><i data-lucide="folder-kanban"></i></span>`
+                : '';
             html += `
-                <div class="history-item ${active}" onclick="openChat('${chat.id}')" title="${escHtml(chat.title)}">
+                <div class="history-item ${active} ${typeClass}" onclick="openChat('${chat.id}')" title="${escHtml(chat.title)}">
                     <span class="history-provider-dot ${chat.provider || 'local'}"></span>
+                    ${typeIcon}
                     <span class="history-title">${escHtml(chat.title)}</span>
                     <button class="history-delete" onclick="deleteChat('${chat.id}', event)" title="Eliminar">
                         <i data-lucide="x"></i>
@@ -568,10 +591,379 @@ function renderChatMessages() {
             }
         } else {
             updateAssistantView(refs, msg.content);
+            if (msg.edits && msg.edits.length) {
+                renderEditCards(refs, msg);
+            }
         }
     });
 
     scrollBottom();
+}
+
+/* =========================================================
+   PROYECTOS — subir archivos, contador de líneas y
+   edición tipo "agente" (agregar/quitar líneas con
+   aprobación manual del usuario)
+   ========================================================= */
+
+function countLines(str) {
+    if (!str) return 0;
+    // Normaliza saltos de línea y cuenta líneas (una cadena vacía = 0 líneas)
+    const norm = String(str).replace(/\r\n/g, '\n');
+    return norm.length ? norm.split('\n').length : 0;
+}
+
+function totalProjectLines(chat) {
+    if (!chat || !chat.projectFiles) return 0;
+    return chat.projectFiles.reduce((sum, f) => sum + countLines(f.content), 0);
+}
+
+function renderProjectBar() {
+    const bar = $('projectBar');
+    if (!bar) return;
+    const chat = getActiveChat();
+
+    if (!chat || chat.type !== 'project') {
+        bar.style.display = 'none';
+        return;
+    }
+
+    bar.style.display = 'flex';
+
+    const linesEl = $('projectLinesCount');
+    if (linesEl) linesEl.textContent = totalProjectLines(chat).toLocaleString();
+
+    const chipsWrap = $('projectFilesChips');
+    if (!chipsWrap) return;
+
+    const files = chat.projectFiles || [];
+    if (!files.length) {
+        chipsWrap.innerHTML = `<span class="project-files-empty">Sin archivos aún — agrega uno para empezar</span>`;
+        return;
+    }
+
+    chipsWrap.innerHTML = files.map(f => `
+        <span class="project-file-chip" onclick="openProjectFilePreview('${f.id}')" title="Ver ${escHtml(f.name)}">
+            <span class="chip-file-name">${escHtml(f.name)}</span>
+            <span class="chip-file-lines">${countLines(f.content)}L</span>
+            <button class="chip-remove" onclick="removeProjectFile('${f.id}', event)" title="Quitar del proyecto">
+                <i data-lucide="x"></i>
+            </button>
+        </span>
+    `).join('');
+
+    if (window.lucide) lucide.createIcons({ nodes: [chipsWrap] });
+}
+
+function triggerProjectFileInput() {
+    const chat = getActiveChat();
+    if (!chat || chat.type !== 'project') return;
+    $('projectFileInput')?.click();
+}
+
+async function onProjectFilesSelected(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    const chat = getActiveChat();
+    if (!chat || chat.type !== 'project') return;
+    if (!chat.projectFiles) chat.projectFiles = [];
+
+    for (const file of files) {
+        try {
+            const text = await file.text();
+            const existing = chat.projectFiles.find(f => f.name === file.name);
+            if (existing) {
+                existing.content = text;
+            } else {
+                chat.projectFiles.push({
+                    id: 'pf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                    name: file.name,
+                    content: text
+                });
+            }
+        } catch (e) {
+            showNotice(`No se pudo leer "${file.name}" (¿es un archivo binario?).`, 'error');
+        }
+    }
+
+    chat.updatedAt = Date.now();
+    persistChats();
+    renderProjectBar();
+    showNotice(`${files.length} archivo(s) agregado(s) al proyecto.`, 'success');
+}
+
+function removeProjectFile(fileId, event) {
+    event?.stopPropagation();
+    const chat = getActiveChat();
+    if (!chat || !chat.projectFiles) return;
+    chat.projectFiles = chat.projectFiles.filter(f => f.id !== fileId);
+    chat.updatedAt = Date.now();
+    persistChats();
+    renderProjectBar();
+}
+
+let previewingFileId = null;
+
+function openProjectFilePreview(fileId) {
+    const chat = getActiveChat();
+    const file = chat?.projectFiles?.find(f => f.id === fileId);
+    if (!file) return;
+
+    previewingFileId = fileId;
+    $('filePreviewName').textContent = file.name;
+    $('filePreviewMeta').textContent = `${countLines(file.content)} líneas · ${(file.content.length / 1024).toFixed(1)} KB`;
+    $('filePreviewCode').textContent = file.content;
+    $('filePreviewModalBg').classList.add('show');
+    if (window.lucide) lucide.createIcons({ nodes: [$('filePreviewModalBg')] });
+}
+
+function closeFilePreview() {
+    previewingFileId = null;
+    $('filePreviewModalBg')?.classList.remove('show');
+}
+
+function handleFilePreviewBgClick(e) {
+    if (e.target === $('filePreviewModalBg')) closeFilePreview();
+}
+
+function deleteProjectFileFromPreview() {
+    if (!previewingFileId) return;
+    removeProjectFile(previewingFileId);
+    closeFilePreview();
+}
+
+/**
+ * Construye el bloque de contexto que se agrega al system prompt cuando
+ * el chat activo es de tipo "proyecto": incluye el contenido íntegro de
+ * cada archivo y las instrucciones de formato para que la IA proponga
+ * ediciones (línea por línea) en vez de solo dar consejos en texto.
+ */
+function buildProjectSystemAddendum(chat) {
+    const files = chat.projectFiles || [];
+    if (!files.length) {
+        return `\n\nEstás en un chat de tipo "Proyecto" pero todavía no hay archivos subidos. Pide al usuario que suba uno o más archivos con el botón "Agregar archivo" antes de proponer cambios.`;
+    }
+
+    const filesBlock = files.map(f =>
+        `### Archivo: ${f.name} (${countLines(f.content)} líneas)\n\`\`\`\n${f.content}\n\`\`\``
+    ).join('\n\n');
+
+    return `\n\nESTÁS EN UN CHAT DE TIPO "PROYECTO". El usuario subió los siguientes archivos de código, y espera que actúes como un agente de edición de código:
+
+${filesBlock}
+
+INSTRUCCIONES PARA PROPONER CAMBIOS (obligatorio seguir este formato):
+- Si el usuario te pide modificar, corregir, agregar o quitar líneas de un archivo, responde primero con una breve explicación en texto normal de qué vas a cambiar y por qué.
+- Luego, por cada archivo que modifiques o crees, incluye un bloque de código con el CONTENIDO COMPLETO Y FINAL del archivo (no solo las líneas cambiadas), usando exactamente este formato de encabezado en el bloque de código:
+\`\`\`file:nombre-del-archivo.ext
+(contenido completo del archivo aquí, con tus cambios ya aplicados)
+\`\`\`
+- Usa el nombre exacto del archivo tal como aparece arriba si estás editando uno existente. Si es un archivo nuevo, usa un nombre de archivo apropiado.
+- NUNCA apliques el cambio tú mismo ni digas que ya está aplicado: el usuario debe revisar el diff y presionar "Aceptar" o "Rechazar" en la interfaz. Tu única función es proponer el nuevo contenido del archivo.
+- Puedes proponer cambios en varios archivos en la misma respuesta, cada uno en su propio bloque \`\`\`file:...\`\`\`.
+- Si el usuario solo hace una pregunta sin pedir cambios, responde normalmente sin generar bloques \`\`\`file:...\`\`\`.`;
+}
+
+/**
+ * Extrae del texto de la respuesta de la IA todos los bloques
+ * ```file:nombre.ext ... ``` que representan una propuesta de edición.
+ */
+function parseFileEdits(text) {
+    if (!text) return [];
+    const regex = /```file:([^\n`]+)\n([\s\S]*?)```/g;
+    const results = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        const fileName = match[1].trim();
+        let content = match[2];
+        // Quitar un único salto de línea final sobrante (el que precede a ```)
+        content = content.replace(/\n$/, '');
+        if (fileName) results.push({ file: fileName, content });
+    }
+    return results;
+}
+
+/**
+ * Diff simple línea por línea basado en LCS (subsecuencia común más larga).
+ * Devuelve un array de { type: 'eq'|'add'|'del', text }.
+ * Para archivos muy grandes (para evitar O(n*m) costoso) recurre a un
+ * diff "grueso": todo el contenido viejo como eliminado y el nuevo como agregado.
+ */
+function computeLineDiff(oldStr, newStr) {
+    const a = oldStr ? oldStr.replace(/\r\n/g, '\n').split('\n') : [];
+    const b = newStr ? newStr.replace(/\r\n/g, '\n').split('\n') : [];
+
+    const MAX_CELLS = 400 * 400; // límite razonable para no bloquear el navegador
+    if (a.length * b.length > MAX_CELLS) {
+        const out = [];
+        a.forEach(l => out.push({ type: 'del', text: l }));
+        b.forEach(l => out.push({ type: 'add', text: l }));
+        return out;
+    }
+
+    const n = a.length, m = b.length;
+    const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+        for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+    }
+
+    const out = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j]) {
+            out.push({ type: 'eq', text: a[i] });
+            i++; j++;
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+            out.push({ type: 'del', text: a[i] });
+            i++;
+        } else {
+            out.push({ type: 'add', text: b[j] });
+            j++;
+        }
+    }
+    while (i < n) { out.push({ type: 'del', text: a[i] }); i++; }
+    while (j < m) { out.push({ type: 'add', text: b[j] }); j++; }
+    return out;
+}
+
+function diffStats(diffArr) {
+    let added = 0, removed = 0;
+    diffArr.forEach(d => {
+        if (d.type === 'add') added++;
+        else if (d.type === 'del') removed++;
+    });
+    return { added, removed };
+}
+
+function buildDiffHTML(diffArr) {
+    return diffArr.map(d => {
+        const mark = d.type === 'add' ? '+' : d.type === 'del' ? '−' : ' ';
+        return `<div class="diff-line ${d.type}"><span class="diff-line-mark">${mark}</span><span class="diff-line-text">${escHtml(d.text)}</span></div>`;
+    }).join('');
+}
+
+/**
+ * Renderiza, debajo de la burbuja del mensaje del asistente, una tarjeta
+ * por cada archivo que la IA propuso modificar, con el diff y los
+ * botones para Aceptar / Rechazar el cambio.
+ */
+function renderEditCards(refs, msgObj) {
+    // Evitar duplicar tarjetas si ya se renderizaron antes
+    refs.message.querySelector('.edit-cards')?.remove();
+
+    const chat = getActiveChat();
+    if (!chat) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'edit-cards';
+
+    const pendingCount = msgObj.edits.filter(e => e.status === 'pending').length;
+    if (msgObj.edits.length > 1 && pendingCount > 1) {
+        const bulk = document.createElement('div');
+        bulk.className = 'edit-cards-bulk';
+        bulk.innerHTML = `
+            <button class="edit-card-btn accept" data-bulk="accept"><i data-lucide="check-check"></i> Aceptar todos (${pendingCount})</button>
+            <button class="edit-card-btn reject" data-bulk="reject"><i data-lucide="x"></i> Rechazar todos</button>`;
+        bulk.querySelector('[data-bulk="accept"]').addEventListener('click', () => {
+            msgObj.edits.filter(e => e.status === 'pending').forEach(e => applyEditDecision(chat, msgObj, e, 'accepted'));
+            renderEditCards(refs, msgObj);
+        });
+        bulk.querySelector('[data-bulk="reject"]').addEventListener('click', () => {
+            msgObj.edits.filter(e => e.status === 'pending').forEach(e => applyEditDecision(chat, msgObj, e, 'rejected'));
+            renderEditCards(refs, msgObj);
+        });
+        wrap.appendChild(bulk);
+    }
+
+    msgObj.edits.forEach(edit => {
+        const existingFile = chat.projectFiles?.find(f => f.name === edit.file);
+        const oldContent = existingFile ? existingFile.content : '';
+        const isNewFile = !existingFile;
+        const diffArr = computeLineDiff(oldContent, edit.newContent);
+        const stats = diffStats(diffArr);
+
+        const card = document.createElement('div');
+        card.className = 'edit-card';
+
+        const header = document.createElement('div');
+        header.className = 'edit-card-header';
+        header.innerHTML = `
+            <i data-lucide="file-diff" class="edit-card-icon"></i>
+            <span class="edit-card-filename">${escHtml(edit.file)}</span>
+            ${isNewFile ? '<span class="edit-card-badge new">nuevo archivo</span>' : ''}
+            <span class="edit-card-stats"><span class="added">+${stats.added}</span><span class="removed">−${stats.removed}</span></span>
+            <span class="edit-card-spacer"></span>
+            <button class="edit-card-toggle"><i data-lucide="chevrons-up-down"></i> Ver diff</button>`;
+        card.appendChild(header);
+
+        const diffEl = document.createElement('div');
+        diffEl.className = 'edit-card-diff';
+        diffEl.innerHTML = buildDiffHTML(diffArr);
+        card.appendChild(diffEl);
+
+        header.querySelector('.edit-card-toggle').addEventListener('click', () => {
+            diffEl.classList.toggle('open');
+        });
+
+        if (edit.status === 'pending') {
+            const actions = document.createElement('div');
+            actions.className = 'edit-card-actions';
+            actions.innerHTML = `
+                <button class="edit-card-btn accept"><i data-lucide="check"></i> Aceptar</button>
+                <button class="edit-card-btn reject"><i data-lucide="x"></i> Rechazar</button>`;
+            actions.querySelector('.accept').addEventListener('click', () => {
+                applyEditDecision(chat, msgObj, edit, 'accepted');
+                renderEditCards(refs, msgObj);
+            });
+            actions.querySelector('.reject').addEventListener('click', () => {
+                applyEditDecision(chat, msgObj, edit, 'rejected');
+                renderEditCards(refs, msgObj);
+            });
+            card.appendChild(actions);
+        } else {
+            const status = document.createElement('div');
+            status.className = `edit-card-status ${edit.status}`;
+            status.innerHTML = edit.status === 'accepted'
+                ? `<i data-lucide="check-circle-2"></i> Cambios aplicados al proyecto`
+                : `<i data-lucide="x-circle"></i> Cambios rechazados`;
+            card.appendChild(status);
+        }
+
+        wrap.appendChild(card);
+    });
+
+    refs.message.appendChild(wrap);
+    if (window.lucide) lucide.createIcons({ nodes: [wrap] });
+}
+
+/**
+ * Aplica la decisión del usuario (aceptar/rechazar) sobre una edición
+ * propuesta: si se acepta, actualiza (o crea) el archivo en el proyecto.
+ */
+function applyEditDecision(chat, msgObj, edit, decision) {
+    edit.status = decision;
+
+    if (decision === 'accepted') {
+        if (!chat.projectFiles) chat.projectFiles = [];
+        const existing = chat.projectFiles.find(f => f.name === edit.file);
+        if (existing) {
+            existing.content = edit.newContent;
+        } else {
+            chat.projectFiles.push({
+                id: 'pf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                name: edit.file,
+                content: edit.newContent
+            });
+        }
+        chat.updatedAt = Date.now();
+    }
+
+    persistChats();
+    renderProjectBar();
 }
 
 /* =========================================================
@@ -1401,9 +1793,27 @@ async function sendMessage() {
         }
 
         // Guardar respuesta
-        activeMessages.push({ role: 'assistant', content: fullText });
+        const asstMsg = { role: 'assistant', content: fullText };
+        activeMessages.push(asstMsg);
         updateActiveChat(activeMessages);
         updateContextCount();
+
+        // Si estamos en un chat de tipo "proyecto", buscar propuestas de
+        // edición de archivos (bloques ```file:...```) en la respuesta.
+        const projectChat = getActiveChat();
+        if (projectChat && projectChat.type === 'project') {
+            const proposed = parseFileEdits(fullText);
+            if (proposed.length) {
+                asstMsg.edits = proposed.map(e => ({
+                    id: 'edit_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                    file: e.file,
+                    newContent: e.content,
+                    status: 'pending'
+                }));
+                persistChats();
+                renderEditCards(asstRefs, asstMsg);
+            }
+        }
 
         // Actualizar tokens
         sessionTokens.input  += usageInput;
@@ -1835,13 +2245,21 @@ function buildContext() {
             content
         }));
 
+    // Si el chat activo es de tipo "proyecto", se agrega al system prompt
+    // el contenido de los archivos y las instrucciones de edición tipo agente.
+    const activeChat = getActiveChat();
+    let systemPrompt = cfg.systemPrompt || '';
+    if (activeChat && activeChat.type === 'project') {
+        systemPrompt = (systemPrompt || 'Eres un asistente útil, preciso y conversacional.') + buildProjectSystemAddendum(activeChat);
+    }
+
     // OpenAI y los servidores locales esperan el system prompt
     // como un mensaje dentro de `messages`.
-    if (cfg.systemPrompt) {
+    if (systemPrompt) {
         return [
             {
                 role: 'system',
-                content: cfg.systemPrompt
+                content: systemPrompt
             },
             ...recentMessages
         ];
@@ -1985,8 +2403,20 @@ function updateAssistantView(refs, rawText) {
         }
     }
 
-    renderMarkdown(refs.textEl, parsed.answer);
+    renderMarkdown(refs.textEl, stripFileEditBlocks(parsed.answer));
     scrollBottom();
+}
+
+/**
+ * Reemplaza los bloques ```file:nombre ... ``` (propuestas de edición de
+ * proyecto) por una nota corta, para no duplicar el contenido completo del
+ * archivo dentro de la burbuja de texto — el detalle se ve en la tarjeta
+ * de edición (con diff) que se renderiza debajo del mensaje.
+ */
+function stripFileEditBlocks(text) {
+    if (!text || text.indexOf('```file:') === -1) return text;
+    return text.replace(/```file:([^\n`]+)\n[\s\S]*?```/g,
+        (_, fname) => `\n\n📄 *Propuesta de cambios para \`${fname.trim()}\` — revisa la tarjeta de edición debajo.*\n`);
 }
 
 /* =========================================================
@@ -2223,30 +2653,4 @@ function showNotice(msg, type = 'info') {
     // Notificación flotante temporal
     const n = document.createElement('div');
     n.style.cssText = `
-        position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
-        background:var(--panel);border:1px solid var(--border2);
-        padding:12px 20px;border-radius:12px;font-size:14px;
-        z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.4);
-        display:flex;align-items:center;gap:10px;
-        animation:appear .2s ease-out;
-        color:${type === 'warning' ? 'var(--warning)' : 'var(--text)'};
-    `;
-    n.textContent = msg;
-    document.body.appendChild(n);
-    setTimeout(() => n.remove(), 3500);
-}
-
-/* =========================================================
-   TEXTAREA AUTO-RESIZE
-   ========================================================= */
-
-function resizeTextarea() {
-    promptInput.style.height = 'auto';
-    promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + 'px';
-}
-
-/* =========================================================
-   TOKEN BADGE → abre modal de créditos
-   ========================================================= */
-
-$('tokenBadge')?.addEventListener('click', openCredits);
+        position:fixed;bottom:100px;left:50%;tr
