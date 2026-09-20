@@ -1620,24 +1620,35 @@ async function streamAnthropic(asstRefs, accumulated) {
         });
     };
 
-    const contextMessages = buildContext(false); // Anthropic: sin system en messages
+const contextMessages = buildContext();
 
-    // Prompt caching: el system prompt se cachea para ahorrar tokens de entrada.
-    // Anthropic cobra 0.1× el precio normal en lecturas de caché (ahorro ~90%).
-    // Se requiere el beta header 'prompt-caching-2024-07-31'.
-    const systemBlock = cfg.systemPrompt
-        ? [{ type: 'text', text: cfg.systemPrompt, cache_control: { type: 'ephemeral' } }]
-        : undefined;
+// Anthropic solo acepta user y assistant dentro de messages.
+// Además, se eliminan campos internos de la interfaz, como _display.
+const anthropicMessages = contextMessages
+    .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+    .map(({ role, content }) => ({
+        role,
+        content
+    }));
 
-    const body = {
-        model:      cfg.anthropicModel,
-        max_tokens: cfg.maxTokens,
-        messages:   contextMessages,
-        stream:     true
-    };
+const body = {
+    model: cfg.anthropicModel,
+    max_tokens: cfg.maxTokens,
+    stream: true,
+    messages: anthropicMessages
+};
 
-    // Solo incluir system si hay system prompt
-    if (systemBlock) body.system = systemBlock;
+// El prompt de sistema se manda fuera de `messages` en Anthropic.
+// Se usa cache_control para ahorrar tokens en llamadas sucesivas.
+if (cfg.systemPrompt && cfg.systemPrompt.trim()) {
+    body.system = [
+        {
+            type: 'text',
+            text: cfg.systemPrompt.trim(),
+            cache_control: { type: 'ephemeral' }
+        }
+    ];
+}
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -1708,22 +1719,36 @@ async function streamAnthropic(asstRefs, accumulated) {
    CONTEXTO (ahorro de tokens)
    ========================================================= */
 
-function buildContext(includeSystem = true) {
-    // Truncamos desde el inicio para mantenernos dentro de maxContext
-    let msgs = activeMessages.filter(m => m.role !== 'system');
+function buildContext() {
+    // Tomar solo los últimos N mensajes del historial.
+    // _display y cualquier otro campo interno de UI se descartan aquí.
+    const recentMessages = activeMessages
+        .filter(msg =>
+            msg &&
+            (msg.role === 'user' || msg.role === 'assistant')
+        )
+        .slice(-cfg.maxContext)
+        .map(({ role, content }) => ({
+            role,
+            content
+        }));
 
-    if (msgs.length > cfg.maxContext) {
-        msgs = msgs.slice(msgs.length - cfg.maxContext);
+    // OpenAI y los servidores locales esperan el system prompt
+    // como un mensaje dentro de `messages`.
+    if (cfg.systemPrompt) {
+        return [
+            {
+                role: 'system',
+                content: cfg.systemPrompt
+            },
+            ...recentMessages
+        ];
     }
 
-    // Nota: los mensajes cuyo content es un array (visión) se pasan tal cual a la API.
-    // Solo los mensajes de texto puro llevan el system prompt inline para OpenAI.
-    if (includeSystem && cfg.systemPrompt) {
-        return [{ role: 'system', content: cfg.systemPrompt }, ...msgs];
-    }
-
-    return msgs;
+    return recentMessages;
 }
+
+
 
 function updateContextCount() {
     const count = activeMessages.filter(m => m.role !== 'system').length;
