@@ -2653,4 +2653,30 @@ function showNotice(msg, type = 'info') {
     // Notificación flotante temporal
     const n = document.createElement('div');
     n.style.cssText = `
-        position:fixed;bottom:100px;left:50%;tr
+        position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
+        background:var(--panel);border:1px solid var(--border2);
+        padding:12px 20px;border-radius:12px;font-size:14px;
+        z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.4);
+        display:flex;align-items:center;gap:10px;
+        animation:appear .2s ease-out;
+        color:${type === 'warning' ? 'var(--warning)' : 'var(--text)'};
+    `;
+    n.textContent = msg;
+    document.body.appendChild(n);
+    setTimeout(() => n.remove(), 3500);
+}
+
+/* =========================================================
+   TEXTAREA AUTO-RESIZE
+   ========================================================= */
+
+function resizeTextarea() {
+    promptInput.style.height = 'auto';
+    promptInput.style.height = Math.min(promptInput.scrollHeight, 200) + 'px';
+}
+
+/* =========================================================
+   TOKEN BADGE → abre modal de créditos
+   ========================================================= */
+
+$('tokenBadge')?.addEventListener('click', openCredits);
