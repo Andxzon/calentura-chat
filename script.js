@@ -20,13 +20,14 @@ const PROVIDERS = {
     openai: {
         label: 'OpenAI',
         models: [
-            { id: 'gpt-5.6-sol',  label: 'GPT-5.6 Sol', price: { in: 0, out: 0 } },
+            { id: 'gpt-6-astra',  label: 'GPT-6 Astra', price: { in: 10.00, out: 50.00 } },
+            { id: 'gpt-5.6-sol',  label: 'GPT-5.6 Sol', price: { in: 4.00, out: 20.00 } },
             { id: 'o1',           label: 'o1',            price: { in: 15.00, out: 60.00 } },
             { id: 'gpt-4.1',      label: 'GPT-4.1',       price: { in: 2.00, out: 8.00  } },
-            { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', price: { in: 0, out: 0 } },
+            { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', price: { in: 2.00, out: 12.00 } },
             { id: 'o3-mini',      label: 'o3 Mini',       price: { in: 1.10, out: 4.40  } },
             { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', price: { in: 0.40, out: 1.60  } },
-            { id: 'gpt-5.6-luna',  label: 'GPT-5.6 Luna', price: { in: 0, out: 0 } },
+            { id: 'gpt-5.6-luna',  label: 'GPT-5.6 Luna', price: { in: 0.20, out: 1.20 } },
             { id: 'gpt-image-2.5-sunburst', label: 'GPT-Image-2.5 (Sunburst)', price: { perImage: 0.040 } },
             { id: 'gpt-image-2.5-flare',    label: 'GPT-Image-2.5 (Flare)',    price: { perImage: 0.035 } },
         ]
@@ -1371,7 +1372,7 @@ async function streamOpenAI(asstRefs, accumulated) {
         body.max_tokens = cfg.maxTokens;
     }
 
-    const endpoint = (cfg.provider === 'openai' && modelId.startsWith('gpt-5.6')) ? 'responses' : 'chat/completions';
+    const endpoint = (cfg.provider === 'openai' && (modelId.startsWith('gpt-5.6') || modelId.startsWith('gpt-6'))) ? 'responses' : 'chat/completions';
     const res = await fetch(`${baseUrl}/${endpoint}`, {
         method: 'POST',
         headers,
