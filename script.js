@@ -1581,13 +1581,18 @@ async function streamOpenAI(asstRefs, accumulated) {
         stream_options:     { include_usage: true }
     };
 
-    // max_tokens vs max_completion_tokens según familia de modelo
-    if (modelId.startsWith('o1') || modelId.startsWith('o3')) {
-        body.max_completion_tokens = cfg.maxTokens;
-    } else if (modelId.startsWith('gpt-5.6') || modelId.startsWith('gpt-6')) {
-        body.max_completion_tokens = cfg.maxTokens;
-    } else {
-        body.max_tokens = cfg.maxTokens;
+    // Modelo LOCAL: sin límite de tokens de salida.
+    // No se envía max_tokens / max_completion_tokens, así que el servidor
+    // genera hasta terminar la respuesta (o hasta llenar su ventana de contexto).
+    // Para OpenAI se mantiene el límite configurado, según la familia de modelo.
+    if (cfg.provider !== 'local') {
+        if (modelId.startsWith('o1') || modelId.startsWith('o3')) {
+            body.max_completion_tokens = cfg.maxTokens;
+        } else if (modelId.startsWith('gpt-5.6') || modelId.startsWith('gpt-6')) {
+            body.max_completion_tokens = cfg.maxTokens;
+        } else {
+            body.max_tokens = cfg.maxTokens;
+        }
     }
 
     // Agregar reasoning_effort si el modelo lo soporta.
